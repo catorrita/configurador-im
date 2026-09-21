@@ -184,7 +184,7 @@ with col_botoes:
 
 # --- COLUNA 3: Imagem ---
 with col_imagem:
-    caminho_imagem = r"C:\Users\felipe.binsfeld\python\planilha-im\pages\imagem_menu.png"
+    caminho_imagem = r"planilha-im/pages/imagem_menu.png"
     if os.path.exists(caminho_imagem):
         st.image(caminho_imagem, use_container_width=True)
     else:
