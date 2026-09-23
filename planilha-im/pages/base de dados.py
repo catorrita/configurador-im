@@ -1,101 +1,57 @@
-import customtkinter as ctk
 import pandas as pd
-from tkinter import ttk
+import streamlit as st
 
-# Configuração visual do CustomTkinter
-ctk.set_appearance_mode("System")
-ctk.set_default_color_theme("blue")
+# Configuração da página no Streamlit
+st.set_page_config(page_title="Consulta de Itens", layout="wide")
 
-
-class TabelaApp(ctk.CTk):
-
-  def __init__(self):
-    super().__init__()
-
-    self.title("Consulta de Itens")
-    self.geometry("900x600")
-
-    # 1. Botão "VOLTAR" (como na imagem)
-    self.btn_voltar = ctk.CTkButton(
-        self, text="← VOLTAR", width=120, height=35, command=self.acao_voltar
-    )
-    self.btn_voltar.pack(anchor="nw", padx=20, pady=15)
-
-    # 2. Campo de Busca (facilita navegar entre muitos itens)
-    self.entry_busca = ctk.CTkEntry(
-        self, placeholder_text="Pesquisar por código ou descrição..."
-    )
-    self.entry_busca.pack(fill="x", padx=20, pady=(0, 10))
-    self.entry_busca.bind("<KeyRelease>", self.filtrar_dados)
-
-    # 3. Tabela (Treeview)
-    self.container_tabela = ctk.CTkFrame(self)
-    self.container_tabela.pack(fill="both", expand=True, padx=20, pady=(0, 20))
-
-    self.colunas = ("CÓDIGO SGE", "CÓDIGO SAP", "DESC_ITEM")
-    self.tabela = ttk.Treeview(
-        self.container_tabela, columns=self.colunas, show="headings"
-    )
-
-    for col in self.colunas:
-      self.tabela.heading(col, text=col)
-
-    # Ajuste de largura das colunas
-    self.tabela.column("CÓDIGO SGE", width=120, anchor="center")
-    self.tabela.column("CÓDIGO SAP", width=120, anchor="center")
-    self.tabela.column("DESC_ITEM", width=550, anchor="w")
-
-    # Barra de Rolagem (Scrollbar)
-    scrollbar = ttk.Scrollbar(
-        self.container_tabela, orient="vertical", command=self.tabela.yview
-    )
-    self.tabela.configure(yscroll=scrollbar.set)
-
-    self.tabela.pack(side="left", fill="both", expand=True)
-    scrollbar.pack(side="right", fill="y")
-
-    # Carregar dados
-    self.carregar_dados()
-
-  def carregar_dados(self):
-    try:
-      # Lê a planilha Excel
-      self.df = pd.read_excel("dados.xlsx", dtype=str)
-      self.atualizar_tabela(self.df)
-    except Exception as e:
-      print(f"Erro ao carregar o arquivo excel: {e}")
-
-  def atualizar_tabela(self, dataframe):
-    # Limpa linhas atuais
-    for item in self.tabela.get_children():
-      self.tabela.delete(item)
-
-    # Insere as novas linhas
-    for _, row in dataframe.iterrows():
-      self.tabela.insert(
-          "",
-          "end",
-          values=(row["CÓDIGO SGE"], row["CÓDIGO SAP"], row["DESC_ITEM"]),
-      )
-
-  def filtrar_dados(self, event):
-    termo = self.entry_busca.get().lower()
-    if not termo:
-      self.atualizar_tabela(self.df)
-      return
-
-    # Filtra por qualquer uma das colunas
-    df_filtrado = self.df[
-        self.df["CÓDIGO SGE"].str.lower().str.contains(termo, na=False)
-        | self.df["CÓDIGO SAP"].str.lower().str.contains(termo, na=False)
-        | self.df["DESC_ITEM"].str.lower().str.contains(termo, na=False)
-    ]
-    self.atualizar_tabela(df_filtrado)
-
-  def acao_voltar(self):
-    print("Ação do botão Voltar executada.")
+# 1. Botão "VOLTAR" (redireciona para a página principal se usar multipáginas)
+col_voltar, _ = st.columns([1, 5])
+with col_voltar:
+  if st.button("← VOLTAR", use_container_width=True):
+    # Altere "Home.py" ou "app.py" para o nome do seu arquivo principal na raiz
+    st.switch_page("app.py")
 
 
-if __name__ == "__main__":
-  app = TabelaApp()
-  app.mainloop()
+# 2. Carregamento e Tratamento dos Dados
+@st.cache_data
+def carregar_dados():
+  try:
+    # Lê a planilha Excel mantendo tudo como texto (string)
+    df = pd.read_excel("dados.xlsx", dtype=str)
+    return df
+  except Exception as e:
+    st.error(f"Erro ao carregar o arquivo excel: {e}")
+    return pd.DataFrame(columns=["CÓDIGO SGE", "CÓDIGO SAP", "DESC_ITEM"])
+
+
+df = carregar_dados()
+
+st.title("Consulta de Itens")
+
+# 3. Campo de Busca
+termo_busca = st.text_input(
+    "Pesquisar", placeholder="Pesquisar por código SGE, SAP ou descrição..."
+)
+
+# 4. Filtragem dos Dados
+if termo_busca:
+  termo = termo_busca.lower()
+  df_exibir = df[
+      df["CÓDIGO SGE"].astype(str).str.lower().str.contains(termo, na=False)
+      | df["CÓDIGO SAP"].astype(str).str.lower().str.contains(termo, na=False)
+      | df["DESC_ITEM"].astype(str).str.lower().str.contains(termo, na=False)
+  ]
+else:
+  df_exibir = df
+
+# 5. Exibição da Tabela
+st.dataframe(
+    df_exibir,
+    column_config={
+        "CÓDIGO SGE": st.column_config.TextColumn("CÓDIGO SGE", width="small"),
+        "CÓDIGO SAP": st.column_config.TextColumn("CÓDIGO SAP", width="small"),
+        "DESC_ITEM": st.column_config.TextColumn("DESC_ITEM", width="large"),
+    },
+    hide_index=True,
+    use_container_width=True,
+)
