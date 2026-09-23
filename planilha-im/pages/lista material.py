@@ -17,37 +17,48 @@ with col_voltar:
     st.switch_page("app.py")
 
 COLUNAS_EXCEL = [chr(i) for i in range(ord("A"), ord("U"))]  # Colunas A até T
+TOTAL_LINHAS = 30
 
-# Guardamos o DataFrame visível e o dicionário com as fórmulas originais
-if "df_dados" not in st.session_state:
-  dados_vazios = [["" for _ in COLUNAS_EXCEL] for _ in range(30)]
-  st.session_state.df_dados = pd.DataFrame(
+# Inicializa as estruturas na sessão
+if "df_valores" not in st.session_state:
+  dados_vazios = [["" for _ in COLUNAS_EXCEL] for _ in range(TOTAL_LINHAS)]
+  st.session_state.df_valores = pd.DataFrame(
       dados_vazios,
       columns=COLUNAS_EXCEL,
-      index=[f"Linha {i+1}" for i in range(30)],
+      index=[f"{i+1}" for i in range(TOTAL_LINHAS)],
   )
 
 if "mapa_formulas" not in st.session_state:
-  st.session_state.mapa_formulas = {}
+  st.session_state.mapa_formulas = (
+      {}
+  )  # Guarda as fórmulas de cada célula (ex: 'C1': '=A1+B1')
 
 
-# Função para recalcular dinamicamente todas as fórmulas ativas
+# Função que calcula e reavalia todas as fórmulas da planilha
 def recalcular_planilha():
-  df = st.session_state.df_dados.copy()
+  # Inicia com os valores manuais/diretos
+  df_calc = st.session_state.df_valores.copy()
 
-  for (r_idx, col_idx), formula in list(st.session_state.mapa_formulas.items()):
+  # Recalcula as células que possuem fórmula
+  for celula_ref, formula in st.session_state.mapa_formulas.items():
+    col_letra = re.match(r"([A-Z]+)", celula_ref).group(1)
+    lin_num = int(re.search(r"(\d+)", celula_ref).group(1)) - 1
+
     try:
       expressao = formula[1:].upper()
 
-      # Encontra referências de células como A1, B2, C10
+      # Substitui todas as referências de células (ex: A1, B1) pelos valores atuais
       referencias = re.findall(r"[A-Z]+\d+", expressao)
-
       for ref in referencias:
-        col_letra = re.match(r"([A-Z]+)", ref).group(1)
-        lin_num = int(re.search(r"(\d+)", ref).group(1)) - 1
+        ref_col = re.match(r"([A-Z]+)", ref).group(1)
+        ref_lin = int(re.search(r"(\d+)", ref).group(1)) - 1
 
-        if col_letra in COLUNAS_EXCEL and 0 <= lin_num < len(df):
-          val_celula = str(df.iat[lin_num, COLUNAS_EXCEL.index(col_letra)]).strip()
+        if ref_col in COLUNAS_EXCEL and 0 <= ref_lin < TOTAL_LINHAS:
+          val_celula = str(
+              st.session_state.df_valores.iat[
+                  ref_lin, COLUNAS_EXCEL.index(ref_col)
+              ]
+          ).strip()
           val_num = (
               val_celula
               if val_celula.replace(".", "", 1).replace("-", "", 1).isdigit()
@@ -56,16 +67,16 @@ def recalcular_planilha():
           expressao = expressao.replace(ref, val_num)
 
       resultado = eval(expressao)
-      df.iat[r_idx, col_idx] = (
+      df_calc.iat[lin_num, COLUNAS_EXCEL.index(col_letra)] = (
           round(resultado, 4) if isinstance(resultado, float) else resultado
       )
     except Exception:
-      df.iat[r_idx, col_idx] = "#ERRO!"
+      df_calc.iat[lin_num, COLUNAS_EXCEL.index(col_letra)] = "#ERRO!"
 
-  st.session_state.df_dados = df
+  return df_calc
 
 
-# Gerador do arquivo Excel salvando as Fórmulas Reais (.xlsx)
+# Exportação em Excel
 def gerar_excel():
   buffer = io.BytesIO()
   wb = openpyxl.Workbook()
@@ -74,10 +85,11 @@ def gerar_excel():
 
   ws.append(COLUNAS_EXCEL)
 
-  df_export = st.session_state.df_dados.copy()
-
-  for (r_idx, c_idx), formula in st.session_state.mapa_formulas.items():
-    df_export.iat[r_idx, c_idx] = formula
+  df_export = st.session_state.df_valores.copy()
+  for celula_ref, formula in st.session_state.mapa_formulas.items():
+    col_letra = re.match(r"([A-Z]+)", celula_ref).group(1)
+    lin_num = int(re.search(r"(\d+)", celula_ref).group(1)) - 1
+    df_export.iat[lin_num, COLUNAS_EXCEL.index(col_letra)] = formula
 
   for _, row in df_export.iterrows():
     linha = []
@@ -113,40 +125,90 @@ with col_exportar:
 st.divider()
 
 # ==========================================
-# 2. PLANILHA INTERATIVA
+# 2. BARRA DE FÓRMULAS ESTILO EXCEL (fx)
 # ==========================================
 st.title("Planilha Interativa")
-st.caption(
-    "Digite valores ou fórmulas como `=A1+B1` e pressione **Enter**. Se alterar"
-    " A1 ou B1, o resultado atualiza automaticamente!"
+
+# Lista de todas as células possíveis para o Seletor (A1, B1, C1...)
+opcoes_celulas = [
+    f"{col}{lin}" for lin in range(1, TOTAL_LINHAS + 1) for col in COLUNAS_EXCEL
+]
+
+col_celula, col_fx, col_aplicar = st.columns([1.5, 6, 2.5])
+
+with col_celula:
+  celula_selecionada = st.selectbox(
+      "Célula", opcoes_celulas, index=opcoes_celulas.index("C1")
+  )
+
+# Obtém o conteúdo atual da célula selecionada (fórmula ou valor)
+conteudo_atual = st.session_state.mapa_formulas.get(
+    celula_selecionada,
+    str(
+        st.session_state.df_valores.iat[
+            int(re.search(r"(\d+)", celula_selecionada).group(1)) - 1,
+            COLUNAS_EXCEL.index(
+                re.match(r"([A-Z]+)", celula_selecionada).group(1)
+            ),
+        ]
+    ),
 )
 
-# Renderiza a planilha na tela
+with col_fx:
+  entrada_formula = st.text_input(
+      "Barra de Fórmulas (fx)",
+      value=conteudo_atual,
+      key=f"input_{celula_selecionada}",
+      placeholder="Digite um valor ou formula ex: =A1+B1",
+  )
+
+with col_aplicar:
+  st.write("")  # Alinhamento
+  st.write("")
+  if st.button(
+      "📌 Inserir / Atualizar", use_container_width=True, type="primary"
+  ):
+    col_letra = re.match(r"([A-Z]+)", celula_selecionada).group(1)
+    lin_num = int(re.search(r"(\d+)", celula_selecionada).group(1)) - 1
+    val_digitado = entrada_formula.strip()
+
+    if val_digitado.startswith("="):
+      st.session_state.mapa_formulas[celula_selecionada] = val_digitado
+    else:
+      st.session_state.mapa_formulas.pop(celula_selecionada, None)
+      st.session_state.df_valores.iat[
+          lin_num, COLUNAS_EXCEL.index(col_letra)
+      ] = val_digitado
+
+    st.rerun()
+
+# ==========================================
+# 3. TABELA COM RESULTADOS E EDIÇÃO RÁPIDA
+# ==========================================
+df_visualizacao = recalcular_planilha()
+
 df_editado = st.data_editor(
-    st.session_state.df_dados,
+    df_visualizacao,
     use_container_width=True,
-    height=550,
-    key="editor_dinamico_v4",
+    height=500,
+    key="grid_excel_fx",
 )
 
-# Detecta o que o utilizador digitou de novo
-precisa_recalcular = False
-
-for r_idx in range(len(df_editado)):
+# Sincroniza edições diretas feitas na tabela
+alterou_grade = False
+for r_idx in range(TOTAL_LINHAS):
   for c_idx in range(len(COLUNAS_EXCEL)):
-    val_novo = str(df_editado.iat[r_idx, c_idx]).strip()
-    val_antigo = str(st.session_state.df_dados.iat[r_idx, c_idx]).strip()
+    val_tela = str(df_editado.iat[r_idx, c_idx]).strip()
+    val_original = str(df_visualizacao.iat[r_idx, c_idx]).strip()
 
-    if val_novo != val_antigo:
-      precisa_recalcular = True
-      if val_novo.startswith("="):
-        # Registra a fórmula na célula
-        st.session_state.mapa_formulas[(r_idx, c_idx)] = val_novo
+    if val_tela != val_original:
+      celula_nome = f"{COLUNAS_EXCEL[c_idx]}{r_idx+1}"
+      alterou_grade = True
+      if val_tela.startswith("="):
+        st.session_state.mapa_formulas[celula_nome] = val_tela
       else:
-        # Se digitou um número/texto comum, remove qualquer fórmula anterior dessa célula
-        st.session_state.mapa_formulas.pop((r_idx, c_idx), None)
-        st.session_state.df_dados.iat[r_idx, c_idx] = val_novo
+        st.session_state.mapa_formulas.pop(celula_nome, None)
+        st.session_state.df_valores.iat[r_idx, c_idx] = val_tela
 
-if precisa_recalcular:
-  recalcular_planilha()
+if alterou_grade:
   st.rerun()
