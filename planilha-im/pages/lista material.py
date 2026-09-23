@@ -28,7 +28,7 @@ if "matriz_raw" not in st.session_state:
   }
 
 
-# Função auxiliar para expandir intervalos (ex: "A1:A5" -> ["A1", "A2", "A3", "A4", "A5"])
+# Função auxiliar para expandir intervalos (ex: "A1:A5" ou "E3:F9")
 def expandir_intervalo(intervalo_str):
   intervalo_str = intervalo_str.strip().upper()
   if ":" not in intervalo_str:
@@ -42,8 +42,8 @@ def expandir_intervalo(intervalo_str):
   idx_col_fim = COLUNAS_EXCEL.index(col_fim)
 
   celulas = []
-  for c in range(min(idx_col_ini, idx_col_fim), max(idx_col_ini, idx_col_fim) + 1):
-    for l in range(min(int(lin_ini), int(lin_fim)), max(int(lin_ini), int(lin_fim)) + 1):
+  for l in range(min(int(lin_ini), int(lin_fim)), max(int(lin_ini), int(lin_fim)) + 1):
+    for c in range(min(idx_col_ini, idx_col_fim), max(idx_col_ini, idx_col_fim) + 1):
       celulas.append(f"{COLUNAS_EXCEL[c]}{l}")
   return celulas
 
@@ -59,7 +59,7 @@ def obter_valor_celula(ref, mapa_dados, historico_visitados=None):
   historico_visitados.add(ref)
   conteudo = str(mapa_dados.get(ref, "")).strip()
 
-  if not conteudo:
+  if not conteudo or conteudo.lower() == "none":
     return ""
 
   if conteudo.startswith("="):
@@ -78,7 +78,36 @@ def obter_valor_numerico(ref, mapa_dados, historico_visitados=None):
     return 0.0
 
 
-# Avaliador de fórmulas com suporte a SOMA, SOMASE, CONTSE, PROCV e operações matemáticas
+# Função para dividir argumentos por vírgula ou ponto e vírgula respeitando aspas
+def dividir_argumentos(args_str):
+  # Normaliza delimitadores fora de aspas
+  partes = []
+  atual = []
+  em_aspas = False
+  caractere_aspas = None
+
+  for char in args_str:
+    if char in ('"', "'"):
+      if not em_aspas:
+        em_aspas = True
+        caractere_aspas = char
+      elif char == caractere_aspas:
+        em_aspas = False
+        caractere_aspas = None
+      atual.append(char)
+    elif char in (",", ";") and not em_aspas:
+      partes.append("".join(atual).strip())
+      atual = []
+    else:
+      atual.append(char)
+
+  if atual:
+    partes.append("".join(atual).strip())
+
+  return partes
+
+
+# Avaliador de fórmulas com suporte a SOMA, SOMASE, CONTSE, PROCV
 def avaliar_formula(formula_str, mapa_dados, historico_visitados=None):
   if historico_visitados is None:
     historico_visitados = set()
@@ -91,7 +120,7 @@ def avaliar_formula(formula_str, mapa_dados, historico_visitados=None):
     # 1. TRATAMENTO DE FUNÇÕES DO EXCEL
     # ------------------------------------------
 
-    # --- SOMA(A1:A5) ---
+    # --- SOMA ---
     match_soma = re.match(r"^SOMA\((.+)\)$", expressao_upper)
     if match_soma:
       arg = match_soma.group(1)
@@ -99,80 +128,85 @@ def avaliar_formula(formula_str, mapa_dados, historico_visitados=None):
       total = sum(obter_valor_numerico(c, mapa_dados, historico_visitados.copy()) for c in celulas)
       return int(total) if total.is_integer() else round(total, 4)
 
-    # --- SOMASE(intervalo, criterio, [intervalo_soma]) ---
-    match_somase = re.match(r"^SOMASE\(([^,]+),\s*([^,]+)(?:,\s*([^)]+))?\)$", expressao_upper)
+    # --- SOMASE ---
+    match_somase = re.match(r"^SOMASE\((.+)\)$", expressao_upper)
     if match_somase:
-      interv = expandir_intervalo(match_somase.group(1))
-      criterio_raw = match_somase.group(2).strip().strip('"\'')
-      interv_soma = expandir_intervalo(match_somase.group(3)) if match_somase.group(3) else interv
+      args = dividir_argumentos(match_somase.group(1))
+      if len(args) >= 2:
+        interv_crit = expandir_intervalo(args[0])
+        criterio_raw = args[1].strip().strip('"\'')
+        interv_soma = expandir_intervalo(args[2]) if len(args) >= 3 else interv_crit
 
-      total = 0.0
-      for idx, c_crit in enumerate(interv):
-        v_crit = str(obter_valor_celula(c_crit, mapa_dados, historico_visitados.copy())).strip()
-        
-        # Trata critério dinâmico (se for referência de célula)
-        if re.match(r"^[A-Z]+\d+$", criterio_raw):
-          criterio_val = str(obter_valor_celula(criterio_raw, mapa_dados, historico_visitados.copy())).strip()
-        else:
-          criterio_val = criterio_raw
+        total = 0.0
+        for idx, c_crit in enumerate(interv_crit):
+          v_crit = str(obter_valor_celula(c_crit, mapa_dados, historico_visitados.copy())).strip()
 
-        if v_crit.upper() == criterio_val.upper():
-          if idx < len(interv_soma):
-            v_soma = obter_valor_numerico(interv_soma[idx], mapa_dados, historico_visitados.copy())
-            total += v_soma
+          if re.match(r"^[A-Z]+\d+$", criterio_raw):
+            criterio_val = str(obter_valor_celula(criterio_raw, mapa_dados, historico_visitados.copy())).strip()
+          else:
+            criterio_val = criterio_raw
 
-      return int(total) if total.is_integer() else round(total, 4)
+          if v_crit.upper() == criterio_val.upper():
+            if idx < len(interv_soma):
+              v_soma = obter_valor_numerico(interv_soma[idx], mapa_dados, historico_visitados.copy())
+              total += v_soma
 
-    # --- CONTSE(intervalo, criterio) ---
-    match_contse = re.match(r"^CONTSE\(([^,]+),\s*([^)]+)\)$", expressao_upper)
+        return int(total) if total.is_integer() else round(total, 4)
+
+    # --- CONTSE ---
+    match_contse = re.match(r"^CONTSE\((.+)\)$", expressao_upper)
     if match_contse:
-      interv = expandir_intervalo(match_contse.group(1))
-      criterio_raw = match_contse.group(2).strip().strip('"\'')
+      args = dividir_argumentos(match_contse.group(1))
+      if len(args) == 2:
+        interv = expandir_intervalo(args[0])
+        criterio_raw = args[1].strip().strip('"\'')
 
-      count = 0
-      for c_crit in interv:
-        v_crit = str(obter_valor_celula(c_crit, mapa_dados, historico_visitados.copy())).strip()
+        count = 0
+        for c_crit in interv:
+          v_crit = str(obter_valor_celula(c_crit, mapa_dados, historico_visitados.copy())).strip()
 
-        if re.match(r"^[A-Z]+\d+$", criterio_raw):
-          criterio_val = str(obter_valor_celula(criterio_raw, mapa_dados, historico_visitados.copy())).strip()
-        else:
-          criterio_val = criterio_raw
+          if re.match(r"^[A-Z]+\d+$", criterio_raw):
+            criterio_val = str(obter_valor_celula(criterio_raw, mapa_dados, historico_visitados.copy())).strip()
+          else:
+            criterio_val = criterio_raw
 
-        if v_crit.upper() == criterio_val.upper():
-          count += 1
+          if v_crit.upper() == criterio_val.upper():
+            count += 1
 
-      return count
+        return count
 
-    # --- PROCV(valor_procurado, matriz_tabela, num_indice_coluna, [procurar_intervalo]) ---
-    match_procv = re.match(r"^PROCV\(([^,]+),\s*([^,]+),\s*(\d+)(?:,\s*([^)]+))?\)$", expressao_upper)
+    # --- PROCV ---
+    match_procv = re.match(r"^PROCV\((.+)\)$", expressao_upper)
     if match_procv:
-      v_busca_raw = match_procv.group(1).strip().strip('"\'')
-      matriz_str = match_procv.group(2).strip()
-      col_idx = int(match_procv.group(3))
+      args = dividir_argumentos(match_procv.group(1))
+      if len(args) >= 3:
+        v_busca_raw = args[0].strip().strip('"\'')
+        matriz_str = args[1].strip()
+        col_idx = int(args[2])
 
-      if re.match(r"^[A-Z]+\d+$", v_busca_raw):
-        v_busca = str(obter_valor_celula(v_busca_raw, mapa_dados, historico_visitados.copy())).strip()
-      else:
-        v_busca = v_busca_raw
+        if re.match(r"^[A-Z]+\d+$", v_busca_raw):
+          v_busca = str(obter_valor_celula(v_busca_raw, mapa_dados, historico_visitados.copy())).strip()
+        else:
+          v_busca = v_busca_raw
 
-      inicio, fim = matriz_str.split(":")
-      col_ini, lin_ini = re.match(r"([A-Z]+)(\d+)", inicio).groups()
-      col_fim, lin_fim = re.match(r"([A-Z]+)(\d+)", fim).groups()
+        inicio, fim = matriz_str.split(":")
+        col_ini, lin_ini = re.match(r"([A-Z]+)(\d+)", inicio).groups()
+        col_fim, lin_fim = re.match(r"([A-Z]+)(\d+)", fim).groups()
 
-      idx_c_ini = COLUNAS_EXCEL.index(col_ini)
-      idx_c_fim = COLUNAS_EXCEL.index(col_fim)
+        idx_c_ini = COLUNAS_EXCEL.index(col_ini)
+        idx_c_fim = COLUNAS_EXCEL.index(col_fim)
 
-      for l in range(int(lin_ini), int(lin_fim) + 1):
-        celula_chave = f"{COLUNAS_EXCEL[idx_c_ini]}{l}"
-        v_chave = str(obter_valor_celula(celula_chave, mapa_dados, historico_visitados.copy())).strip()
+        for l in range(int(lin_ini), int(lin_fim) + 1):
+          celula_chave = f"{COLUNAS_EXCEL[idx_c_ini]}{l}"
+          v_chave = str(obter_valor_celula(celula_chave, mapa_dados, historico_visitados.copy())).strip()
 
-        if v_chave.upper() == v_busca.upper():
-          target_col_idx = idx_c_ini + col_idx - 1
-          if target_col_idx <= idx_c_fim:
-            celula_alvo = f"{COLUNAS_EXCEL[target_col_idx]}{l}"
-            return obter_valor_celula(celula_alvo, mapa_dados, historico_visitados.copy())
+          if v_chave.upper() == v_busca.upper():
+            target_col_idx = idx_c_ini + col_idx - 1
+            if target_col_idx <= idx_c_fim:
+              celula_alvo = f"{COLUNAS_EXCEL[target_col_idx]}{l}"
+              return obter_valor_celula(celula_alvo, mapa_dados, historico_visitados.copy())
 
-      return "#N/A"
+        return "#N/A"
 
     # ------------------------------------------
     # 2. AVALIAÇÃO MATEMÁTICA PADRÃO (A1+B1, etc)
@@ -206,9 +240,9 @@ def gerar_dataframe_calculado():
 
       if conteudo.startswith("="):
         res = avaliar_formula(conteudo, mapa_raw)
-        linha_vals.append("" if res is None else str(res))
+        linha_vals.append("" if res is None or res == "None" else str(res))
       else:
-        linha_vals.append(conteudo)
+        linha_vals.append("" if conteudo == "None" else conteudo)
     dados_grid.append(linha_vals)
 
   df = pd.DataFrame(
@@ -219,7 +253,7 @@ def gerar_dataframe_calculado():
   return df
 
 
-# Função para exportar arquivo Excel (.xlsx) preservando as fórmulas
+# Função para exportar arquivo Excel (.xlsx)
 def gerar_excel():
   buffer = io.BytesIO()
   wb = openpyxl.Workbook()
@@ -234,7 +268,7 @@ def gerar_excel():
       celula_ref = f"{col}{lin}"
       val = str(st.session_state.matriz_raw.get(celula_ref, "")).strip()
 
-      if not val:
+      if not val or val == "None":
         linha.append("")
       elif (
           val.replace(".", "", 1).replace("-", "", 1).isdigit()
@@ -277,10 +311,11 @@ col_celula, col_fx = st.columns([2, 8])
 with col_celula:
   celula_selecionada = st.selectbox("Célula", opcoes_celulas, index=0)
 
-# Recupera o valor/fórmula armazenado na célula selecionada
 val_atual = st.session_state.matriz_raw.get(celula_selecionada, "")
+if val_atual == "None":
+  val_atual = ""
 
-# Callback chamado ao pressionar Enter na Barra de Fórmulas
+
 def atualizar_barra_fx():
   novo_texto = st.session_state[f"input_fx_{celula_selecionada}"]
   st.session_state.matriz_raw[celula_selecionada] = novo_texto.strip()
@@ -292,7 +327,7 @@ with col_fx:
       value=val_atual,
       key=f"input_fx_{celula_selecionada}",
       on_change=atualizar_barra_fx,
-      placeholder="Digite um valor ou fórmula (ex: =SOMA(A1:A5), =PROCV(A1, B1:C10, 2)) e pressione Enter",
+      placeholder="Digite um valor ou fórmula (ex: =SOMASE(E3:F9;\"a\";F3:F9)) e pressione Enter",
   )
 
 # ==========================================
@@ -304,10 +339,9 @@ df_editado = st.data_editor(
     df_exibicao,
     use_container_width=True,
     height=550,
-    key="grid_excel_v5",
+    key="grid_excel_v6",
 )
 
-# Detecta alterações feitas diretamente nas células do Data Editor
 houve_alteracao = False
 for lin_idx, lin in enumerate(range(1, TOTAL_LINHAS + 1)):
   for col_idx, col in enumerate(COLUNAS_EXCEL):
@@ -315,7 +349,6 @@ for lin_idx, lin in enumerate(range(1, TOTAL_LINHAS + 1)):
     val_digitado_grid = str(df_editado.iat[lin_idx, col_idx]).strip()
     val_calculado_grid = str(df_exibicao.iat[lin_idx, col_idx]).strip()
 
-    # Se o usuário alterou a célula na tabela diretamente
     if val_digitado_grid != val_calculado_grid:
       st.session_state.matriz_raw[celula_ref] = val_digitado_grid
       houve_alteracao = True
