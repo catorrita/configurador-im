@@ -2,3 +2,4 @@ streamlit
 databricks-sdk
 pandas
 openpyxl
+formulas
