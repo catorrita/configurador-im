@@ -15,34 +15,42 @@ with col_voltar:
   if st.button("← Ir ao Início", use_container_width=True):
     st.switch_page("app.py")
 
-# Inicializa matriz em branco (20 linhas x 8 colunas)
-if "df_planilha" not in st.session_state:
+# Inicializa matriz em branco se não existir na sessão (Guarda as FÓRMULAS ORIGINAIS)
+if "df_formulas" not in st.session_state:
   colunas = ["A", "B", "C", "D", "E", "F", "G", "H"]
   dados_vazios = [["" for _ in colunas] for _ in range(20)]
-  st.session_state.df_planilha = pd.DataFrame(dados_vazios, columns=colunas)
+  st.session_state.df_formulas = pd.DataFrame(dados_vazios, columns=colunas)
 
 
-# Função para calcular expressões simples digitadas (=A1+A2, =SUM(A1:A5), etc.)
-def avaliar_grid(df):
-  df_calculado = df.copy()
+# Função que reavalia todas as fórmulas com base nos dados mais recentes
+def calcular_planilha(df_origem):
+  df_calc = df_origem.copy()
 
-  # Processa células com fórmulas simples
-  for r_idx in range(len(df_calculado)):
-    for c_idx, col in enumerate(df_calculado.columns):
-      val = str(df_calculado.iat[r_idx, c_idx]).strip()
+  for r_idx in range(len(df_calc)):
+    for c_idx, col in enumerate(df_calc.columns):
+      val = str(df_calc.iat[r_idx, c_idx]).strip()
+
       if val.startswith("="):
         try:
-          # Trata fórmulas simples de adição/subtração/multiplicação/divisão
           expressao = val[1:].upper()
 
-          # Substitui referências de células (ex: A1, A2) pelos seus valores numéricos reais
-          for row in range(1, len(df_calculado) + 1):
-            for col_letter_idx, col_letter in enumerate(df_calculado.columns):
+          # Substitui as referências de células (ex: A1, A2) pelos valores numéricos atuais
+          for row in range(1, len(df_calc) + 1):
+            for col_letter_idx, col_letter in enumerate(df_calc.columns):
               celula_ref = f"{col_letter}{row}"
               if celula_ref in expressao:
                 val_celula = str(
-                    df_calculado.iat[row - 1, col_letter_idx]
+                    df_origem.iat[row - 1, col_letter_idx]
                 ).strip()
+
+                # Se a célula referenciada também for uma fórmula, calcula recursivamente
+                if val_celula.startswith("="):
+                  val_celula = str(
+                      calcular_planilha(df_origem).iat[
+                          row - 1, col_letter_idx
+                      ]
+                  )
+
                 val_num = (
                     val_celula
                     if val_celula.replace(".", "", 1)
@@ -52,25 +60,26 @@ def avaliar_grid(df):
                 )
                 expressao = expressao.replace(celula_ref, val_num)
 
-          # Avalia o resultado matemático
           resultado = eval(expressao)
-          df_calculado.iat[r_idx, c_idx] = str(resultado)
+          df_calc.iat[r_idx, c_idx] = (
+              round(resultado, 4) if isinstance(resultado, float) else resultado
+          )
         except Exception:
-          # Mantém o texto da fórmula se ainda não puder ser calculada
-          pass
-  return df_calculado
+          df_calc.iat[r_idx, c_idx] = "#ERRO!"
+
+  return df_calc
 
 
-# Função para exportar para o Excel
-def gerar_excel(df):
+# Função para exportar para o Excel sem a coluna visual de índice
+def gerar_excel(df_formulas):
   buffer = io.BytesIO()
   wb = openpyxl.Workbook()
   ws = wb.active
   ws.title = "Planilha"
 
-  ws.append(list(df.columns))
+  ws.append(list(df_formulas.columns))
 
-  for _, row in df.iterrows():
+  for _, row in df_formulas.iterrows():
     linha = []
     for val in row:
       if pd.isna(val) or val is None:
@@ -92,11 +101,11 @@ def gerar_excel(df):
 
 
 with col_exportar:
-  excel_file = gerar_excel(st.session_state.df_planilha)
+  excel_file = gerar_excel(st.session_state.df_formulas)
   st.download_button(
       label="📥 Exportar Planilha",
       data=excel_file,
-      file_name="planilha_material.xlsx",
+      file_name="planilha_dinamica.xlsx",
       mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       use_container_width=True,
       type="primary",
@@ -105,25 +114,58 @@ with col_exportar:
 st.divider()
 
 # ==========================================
-# 2. PLANILHA INTERATIVA
+# 2. PLANILHA DINÂMICA COM NUMERAÇÃO DE LINHAS
 # ==========================================
-st.title("📊 Planilha com Cálculo de Fórmulas")
+st.title("📊 Planilha Dinâmica")
 st.caption(
-    "Digite valores nas células. Para somar ou calcular, digite expressões"
-    " como `=A1+A2` ou `=B1*2`. O resultado será processado automaticamente ao"
-    " confirmar a célula."
+    "Altere qualquer valor e as fórmulas serão recalculadas automaticamente em"
+    " tempo real!"
 )
 
-# Renderiza o editor de dados
+# Calcula a visualização atual das fórmulas
+df_exibicao = calcular_planilha(st.session_state.df_formulas)
+
+# Insere a coluna visual do número de linhas no início (1, 2, 3...)
+df_exibicao_com_linhas = df_exibicao.copy()
+df_exibicao_com_linhas.insert(
+    0, "Linha", range(1, len(df_exibicao_com_linhas) + 1)
+)
+
+# Renderiza a tabela no Streamlit
 df_editado = st.data_editor(
-    st.session_state.df_planilha,
+    df_exibicao_com_linhas,
     num_rows="dynamic",
     use_container_width=True,
     height=550,
-    key="grid_editor_formulas",
+    key="grid_dinamico_linhas",
+    disabled=["Linha"],  # Bloqueia a edição da coluna de número de linha
 )
 
-# Processa e atualiza as fórmulas
-if not df_editado.equals(st.session_state.df_planilha):
-  st.session_state.df_planilha = avaliar_grid(df_editado)
+# Remove a coluna de indicação 'Linha' para processar apenas os dados das colunas A, B, C...
+df_editado_dados = df_editado.drop(columns=["Linha"], errors="ignore")
+
+# Detecta alterações efetuadas pelo usuário e atualiza a matriz principal
+if not df_editado_dados.equals(df_exibicao):
+  # Ajusta o tamanho caso linhas tenham sido adicionadas/removidas
+  if len(df_editado_dados) != len(st.session_state.df_formulas):
+    novos_dados = [
+        ["" for _ in st.session_state.df_formulas.columns]
+        for _ in range(len(df_editado_dados))
+    ]
+    st.session_state.df_formulas = pd.DataFrame(
+        novos_dados, columns=st.session_state.df_formulas.columns
+    )
+
+  for r_idx in range(len(df_editado_dados)):
+    for c_idx in range(len(df_editado_dados.columns)):
+      val_antigo = str(
+          st.session_state.df_formulas.iat[r_idx, c_idx]
+      ).strip()
+      val_novo = str(df_editado_dados.iat[r_idx, c_idx]).strip()
+
+      if not val_antigo.startswith("="):
+        st.session_state.df_formulas.iat[r_idx, c_idx] = val_novo
+      elif val_novo.startswith("="):
+        st.session_state.df_formulas.iat[r_idx, c_idx] = val_novo
+
   st.rerun()
