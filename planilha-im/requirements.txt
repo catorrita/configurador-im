@@ -2,4 +2,3 @@ streamlit
 databricks-sdk
 pandas
 openpyxl
-streamlit-handsontable
