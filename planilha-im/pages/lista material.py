@@ -95,7 +95,7 @@ def dividir_argumentos(args_str):
   return partes
 
 
-# Avaliador de fórmulas com suporte a SOMA, SOMASE, CONTSE, PROCV
+# Avaliador de fórmulas com suporte a SOMA, SOMASE, CONT.SE / CONTSE, PROCV
 def avaliar_formula(formula_str, mapa_dados, historico_visitados=None):
   if historico_visitados is None:
     historico_visitados = set()
@@ -135,7 +135,6 @@ def avaliar_formula(formula_str, mapa_dados, historico_visitados=None):
         criterio_raw = args[1].strip().strip('"\'')
         interv_soma_str = args[2] if len(args) >= 3 else interv_crit_str
 
-        # Define limites do intervalo de critério
         if ":" in interv_crit_str:
           c_ini_crit, l_ini_crit = parse_celula(interv_crit_str.split(":")[0])
           c_fim_crit, l_fim_crit = parse_celula(interv_crit_str.split(":")[1])
@@ -143,7 +142,6 @@ def avaliar_formula(formula_str, mapa_dados, historico_visitados=None):
           c_ini_crit, l_ini_crit = parse_celula(interv_crit_str)
           c_fim_crit, l_fim_crit = parse_celula(interv_crit_str)
 
-        # Define início do intervalo de soma
         if ":" in interv_soma_str:
           c_ini_soma, l_ini_soma = parse_celula(interv_soma_str.split(":")[0])
         else:
@@ -151,7 +149,6 @@ def avaliar_formula(formula_str, mapa_dados, historico_visitados=None):
 
         total = 0.0
 
-        # Percorre a matriz de critério mantendo a correspondência exata do Excel
         for c in range(min(c_ini_crit, c_fim_crit), max(c_ini_crit, c_fim_crit) + 1):
           for l in range(min(l_ini_crit, l_fim_crit), max(l_ini_crit, l_fim_crit) + 1):
             c_crit_ref = f"{COLUNAS_EXCEL[c]}{l}"
@@ -163,7 +160,6 @@ def avaliar_formula(formula_str, mapa_dados, historico_visitados=None):
               criterio_val = criterio_raw
 
             if v_crit.upper() == criterio_val.upper():
-              # Calcula deslocamento para a célula de soma
               delta_col = c - min(c_ini_crit, c_fim_crit)
               delta_lin = l - min(l_ini_crit, l_fim_crit)
 
@@ -177,8 +173,8 @@ def avaliar_formula(formula_str, mapa_dados, historico_visitados=None):
 
         return int(total) if total.is_integer() else round(total, 4)
 
-    # --- CONTSE ---
-    match_contse = re.match(r"^CONTSE\((.+)\)$", expressao_upper)
+    # --- CONT.SE ou CONTSE ---
+    match_contse = re.match(r"^CONT\.?SE\((.+)\)$", expressao_upper)
     if match_contse:
       args = dividir_argumentos(match_contse.group(1))
       if len(args) == 2:
@@ -357,7 +353,7 @@ with col_fx:
       value=val_atual,
       key=f"input_fx_{celula_selecionada}",
       on_change=atualizar_barra_fx,
-      placeholder="Digite um valor ou fórmula (ex: =SOMASE(E3:F9;\"a\";F3:F9)) e pressione Enter",
+      placeholder="Digite um valor ou fórmula (ex: =CONT.SE(E3:E9;\"a\")) e pressione Enter",
   )
 
 # ==========================================
@@ -369,7 +365,7 @@ df_editado = st.data_editor(
     df_exibicao,
     use_container_width=True,
     height=550,
-    key="grid_excel_v7",
+    key="grid_excel_v8",
 )
 
 houve_alteracao = False
