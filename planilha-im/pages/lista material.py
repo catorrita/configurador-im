@@ -7,7 +7,7 @@ import streamlit as st
 st.set_page_config(page_title="Planilha Interativa", layout="wide")
 
 # ==========================================
-# 1. BARRA SUPERIOR (BOTÕES NO TOPO)
+# 1. BARRA SUPERIOR
 # ==========================================
 col_voltar, col_espaco, col_exportar = st.columns([2, 5, 2])
 
@@ -15,14 +15,18 @@ with col_voltar:
   if st.button("← Ir ao Início", use_container_width=True):
     st.switch_page("app.py")
 
-# Inicializa matriz em branco se não existir na sessão (Guarda as FÓRMULAS ORIGINAIS)
+# Criamos a estrutura de colunas do Excel (A até T)
+COLUNAS_EXCEL = [chr(i) for i in range(ord("A"), ord("U"))]  # A até T
+
+# Inicializa no session_state com índice de 1 a 30 (como no Excel)
 if "df_formulas" not in st.session_state:
-  colunas = ["A", "B", "C", "D", "E", "F", "G", "H"]
-  dados_vazios = [["" for _ in colunas] for _ in range(20)]
-  st.session_state.df_formulas = pd.DataFrame(dados_vazios, columns=colunas)
+  dados_vazios = [["" for _ in COLUNAS_EXCEL] for _ in range(30)]
+  df_init = pd.DataFrame(dados_vazios, columns=COLUNAS_EXCEL)
+  df_init.index = range(1, 31)  # Define linhas começando em 1
+  st.session_state.df_formulas = df_init
 
 
-# Função que reavalia todas as fórmulas com base nos dados mais recentes
+# Função de cálculo de fórmulas em tempo real
 def calcular_planilha(df_origem):
   df_calc = df_origem.copy()
 
@@ -34,7 +38,7 @@ def calcular_planilha(df_origem):
         try:
           expressao = val[1:].upper()
 
-          # Substitui as referências de células (ex: A1, A2) pelos valores numéricos atuais
+          # Substitui referências de células (ex: A1, B1, A2) pelos valores das células
           for row in range(1, len(df_calc) + 1):
             for col_letter_idx, col_letter in enumerate(df_calc.columns):
               celula_ref = f"{col_letter}{row}"
@@ -43,12 +47,10 @@ def calcular_planilha(df_origem):
                     df_origem.iat[row - 1, col_letter_idx]
                 ).strip()
 
-                # Se a célula referenciada também for uma fórmula, calcula recursivamente
+                # Se a célula referenciada for outra fórmula, calcula ela primeiro
                 if val_celula.startswith("="):
                   val_celula = str(
-                      calcular_planilha(df_origem).iat[
-                          row - 1, col_letter_idx
-                      ]
+                      calcular_planilha(df_origem).iat[row - 1, col_letter_idx]
                   )
 
                 val_num = (
@@ -70,7 +72,7 @@ def calcular_planilha(df_origem):
   return df_calc
 
 
-# Função para exportar para o Excel sem a coluna visual de índice
+# Gerador de arquivo Excel .xlsx
 def gerar_excel(df_formulas):
   buffer = io.BytesIO()
   wb = openpyxl.Workbook()
@@ -105,7 +107,7 @@ with col_exportar:
   st.download_button(
       label="📥 Exportar Planilha",
       data=excel_file,
-      file_name="planilha_dinamica.xlsx",
+      file_name="planilha.xlsx",
       mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       use_container_width=True,
       type="primary",
@@ -114,54 +116,41 @@ with col_exportar:
 st.divider()
 
 # ==========================================
-# 2. PLANILHA DINÂMICA COM NUMERAÇÃO DE LINHAS
+# 2. PLANILHA ESTILO EXCEL
 # ==========================================
-st.title("📊 Planilha Dinâmica")
-st.caption(
-    "Altere qualquer valor e as fórmulas serão recalculadas automaticamente em"
-    " tempo real!"
-)
+st.title("📊 Planilha")
 
-# Calcula a visualização atual das fórmulas
+# Calcula os resultados mantendo o índice numérico nativo de 1 a N
 df_exibicao = calcular_planilha(st.session_state.df_formulas)
 
-# Insere a coluna visual do número de linhas no início (1, 2, 3...)
-df_exibicao_com_linhas = df_exibicao.copy()
-df_exibicao_com_linhas.insert(
-    0, "Linha", range(1, len(df_exibicao_com_linhas) + 1)
-)
-
-# Renderiza a tabela no Streamlit
+# Renderiza a tabela usando o índice de linhas nativo
 df_editado = st.data_editor(
-    df_exibicao_com_linhas,
+    df_exibicao,
     num_rows="dynamic",
     use_container_width=True,
-    height=550,
-    key="grid_dinamico_linhas",
-    disabled=["Linha"],  # Bloqueia a edição da coluna de número de linha
+    height=600,
+    key="excel_grid_v2",
 )
 
-# Remove a coluna de indicação 'Linha' para processar apenas os dados das colunas A, B, C...
-df_editado_dados = df_editado.drop(columns=["Linha"], errors="ignore")
+# Atualiza as fórmulas e valores na sessão se houver alteração
+if not df_editado.equals(df_exibicao):
+  # Mantém o índice ajustado caso linhas sejam inseridas/deletadas
+  df_editado.index = range(1, len(df_editado) + 1)
 
-# Detecta alterações efetuadas pelo usuário e atualiza a matriz principal
-if not df_editado_dados.equals(df_exibicao):
-  # Ajusta o tamanho caso linhas tenham sido adicionadas/removidas
-  if len(df_editado_dados) != len(st.session_state.df_formulas):
+  if len(df_editado) != len(st.session_state.df_formulas):
     novos_dados = [
-        ["" for _ in st.session_state.df_formulas.columns]
-        for _ in range(len(df_editado_dados))
+        ["" for _ in COLUNAS_EXCEL] for _ in range(len(df_editado))
     ]
     st.session_state.df_formulas = pd.DataFrame(
-        novos_dados, columns=st.session_state.df_formulas.columns
+        novos_dados, columns=COLUNAS_EXCEL, index=range(1, len(df_editado) + 1)
     )
 
-  for r_idx in range(len(df_editado_dados)):
-    for c_idx in range(len(df_editado_dados.columns)):
+  for r_idx in range(len(df_editado)):
+    for c_idx in range(len(df_editado.columns)):
       val_antigo = str(
           st.session_state.df_formulas.iat[r_idx, c_idx]
       ).strip()
-      val_novo = str(df_editado_dados.iat[r_idx, c_idx]).strip()
+      val_novo = str(df_editado.iat[r_idx, c_idx]).strip()
 
       if not val_antigo.startswith("="):
         st.session_state.df_formulas.iat[r_idx, c_idx] = val_novo
