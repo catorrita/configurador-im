@@ -14,7 +14,6 @@ st.set_page_config(page_title="Planilha Interativa", layout="wide")
 # ==========================================
 GITHUB_TOKEN = st.secrets.get("GITHUB_TOKEN", "")
 GITHUB_REPO = st.secrets.get("GITHUB_REPO", "catorrita/configurador-im")
-# Caminho exato apontando para o arquivo no repositório
 FILE_PATH = st.secrets.get(
     "GITHUB_FILE_PATH", "planilha-im/dados/planilha_salva.json"
 )
@@ -40,7 +39,6 @@ def carregar_dados_github():
     try:
       content = repo.get_contents(FILE_PATH)
       dados = json.loads(content.decoded_content.decode("utf-8"))
-      # Limpa possíveis valores "None" salvos no JSON antigo
       for key, val in dados.items():
         if str(val).strip().lower() in ["none", "nan", "null"]:
           dados[key] = ""
@@ -54,7 +52,6 @@ def carregar_dados_github():
       else:
         st.error(f"Erro ao carregar dados do GitHub: {e}")
 
-  # Matriz em branco padrão se o arquivo não existir
   return {
       f"{col}{lin}": ""
       for lin in range(1, 31)
@@ -78,7 +75,6 @@ def salvar_dados_github():
   try:
     with st.spinner("💾 Gravando alterações no GitHub..."):
       try:
-        # Atualiza o arquivo existente
         content = repo.get_contents(FILE_PATH)
         repo.update_file(
             path=FILE_PATH,
@@ -88,7 +84,6 @@ def salvar_dados_github():
         )
       except GithubException as e:
         if e.status == 404:
-          # Cria o arquivo/diretório se ainda não existir
           repo.create_file(
               path=FILE_PATH,
               message="Criação inicial do arquivo da planilha",
@@ -106,7 +101,7 @@ def salvar_dados_github():
 
 
 # Inicialização de Session States
-COLUNAS_EXCEL = [chr(i) for i in range(ord("A"), ord("U"))]  # Colunas A até T
+COLUNAS_EXCEL = [chr(i) for i in range(ord("A"), ord("U"))]  # A até T
 TOTAL_LINHAS = 30
 
 if "matriz_raw" not in st.session_state:
@@ -137,16 +132,16 @@ with col_salvar:
     salvar_dados_github()
 
 
-# Função para obter dados de uma célula específica no formato de coordenadas
+# Funções de Parsing e Avaliação de Fórmulas
 def parse_celula(ref):
   match = re.match(r"([A-Z]+)(\d+)", ref.strip().upper())
   if match:
     col_str, lin_str = match.groups()
-    return COLUNAS_EXCEL.index(col_str), int(lin_str)
+    if col_str in COLUNAS_EXCEL:
+      return COLUNAS_EXCEL.index(col_str), int(lin_str)
   return None, None
 
 
-# Função auxiliar para obter valor exato/resolvido de uma célula
 def obter_valor_celula(ref, mapa_dados, historico_visitados=None):
   if historico_visitados is None:
     historico_visitados = set()
@@ -167,7 +162,6 @@ def obter_valor_celula(ref, mapa_dados, historico_visitados=None):
   return conteudo
 
 
-# Função auxiliar para obter valor numérico
 def obter_valor_numerico(ref, mapa_dados, historico_visitados=None):
   val = obter_valor_celula(ref, mapa_dados, historico_visitados)
   try:
@@ -176,7 +170,6 @@ def obter_valor_numerico(ref, mapa_dados, historico_visitados=None):
     return 0.0
 
 
-# Função para dividir argumentos por vírgula ou ponto e vírgula respeitando aspas
 def dividir_argumentos(args_str):
   partes = []
   atual = []
@@ -204,7 +197,6 @@ def dividir_argumentos(args_str):
   return partes
 
 
-# Avaliador de fórmulas com suporte a SOMA, SOMASE, CONT.SE / CONTSE, PROCV
 def avaliar_formula(formula_str, mapa_dados, historico_visitados=None):
   if historico_visitados is None:
     historico_visitados = set()
@@ -299,7 +291,7 @@ def avaliar_formula(formula_str, mapa_dados, historico_visitados=None):
 
         return int(total) if total.is_integer() else round(total, 4)
 
-    # --- CONT.SE ou CONTSE ---
+    # --- CONT.SE / CONTSE ---
     match_contse = re.match(r"^CONT\.?SE\((.+)\)$", expressao_upper)
     if match_contse:
       args = dividir_argumentos(match_contse.group(1))
@@ -378,7 +370,7 @@ def avaliar_formula(formula_str, mapa_dados, historico_visitados=None):
 
         return "#N/A"
 
-    # Avaliação Matemática Padrão
+    # Avaliação Matemática Padrão (Substituição de Referências ex: B2+C2)
     refs = re.findall(r"\b[A-Z]+\d+\b", expressao_upper)
     for ref in refs:
       val = obter_valor_numerico(ref, mapa_dados, historico_visitados.copy())
@@ -395,7 +387,7 @@ def avaliar_formula(formula_str, mapa_dados, historico_visitados=None):
     return "#ERRO!"
 
 
-# Função que constrói o DataFrame visual para exibição
+# Função que monta a grade exibida no Streamlit
 def gerar_dataframe_calculado():
   dados_grid = []
   mapa_raw = st.session_state.matriz_raw
@@ -410,11 +402,7 @@ def gerar_dataframe_calculado():
         linha_vals.append("")
       elif conteudo.startswith("="):
         res = avaliar_formula(conteudo, mapa_raw)
-        if (
-            res is None
-            or str(res).lower() in ["none", "nan", "null"]
-            or res == "#ERRO!"
-        ):
+        if res is None or str(res).lower() in ["none", "nan", "null"]:
           linha_vals.append("")
         else:
           linha_vals.append(str(res))
@@ -430,7 +418,7 @@ def gerar_dataframe_calculado():
   return df
 
 
-# Função para exportar arquivo Excel (.xlsx)
+# Exportar Excel
 def gerar_excel():
   buffer = io.BytesIO()
   wb = openpyxl.Workbook()
@@ -493,13 +481,15 @@ if val_atual.lower() in ["none", "nan", "null"]:
 
 
 def atualizar_barra_fx():
-  novo_texto = st.session_state[f"input_fx_{celula_selecionada}"].strip()
-  if novo_texto.lower() in ["none", "nan", "null"]:
-    novo_texto = ""
+  chave_input = f"input_fx_{celula_selecionada}"
+  if chave_input in st.session_state:
+    novo_texto = st.session_state[chave_input].strip()
+    if novo_texto.lower() in ["none", "nan", "null"]:
+      novo_texto = ""
 
-  if st.session_state.matriz_raw.get(celula_selecionada, "") != novo_texto:
-    st.session_state.matriz_raw[celula_selecionada] = novo_texto
-    st.session_state.alteracoes_pendentes = True
+    if st.session_state.matriz_raw.get(celula_selecionada, "") != novo_texto:
+      st.session_state.matriz_raw[celula_selecionada] = novo_texto
+      st.session_state.alteracoes_pendentes = True
 
 
 with col_fx:
@@ -508,7 +498,10 @@ with col_fx:
       value=val_atual,
       key=f"input_fx_{celula_selecionada}",
       on_change=atualizar_barra_fx,
-      placeholder="Digite um valor ou fórmula (ex: =CONT.SE(E3:E9;\"a\")) e pressione Enter",
+      placeholder=(
+          "Digite um valor ou fórmula (ex: =B2+C2 ou =CONT.SE(E3:E9;\"a\")) e"
+          " pressione Enter"
+      ),
   )
 
 # ==========================================
@@ -523,13 +516,13 @@ df_editado = st.data_editor(
     key="grid_excel_v8",
 )
 
+# Comparação Inteligente (apenas altera quando o usuário digita algo diferente do resultado exibido)
 houve_alteracao = False
 for lin_idx, lin in enumerate(range(1, TOTAL_LINHAS + 1)):
   for col_idx, col in enumerate(COLUNAS_EXCEL):
     celula_ref = f"{col}{lin}"
     val_digitado = df_editado.iat[lin_idx, col_idx]
 
-    # Trata valores nulos/vazios para não converter em "None"
     if (
         pd.isna(val_digitado)
         or val_digitado is None
@@ -539,9 +532,10 @@ for lin_idx, lin in enumerate(range(1, TOTAL_LINHAS + 1)):
     else:
       val_final = str(val_digitado).strip()
 
-    val_anterior = str(st.session_state.matriz_raw.get(celula_ref, "")).strip()
+    val_calculado_exibido = str(df_exibicao.iat[lin_idx, col_idx]).strip()
 
-    if val_final != val_anterior:
+    # Se o valor digitado na grade for diferente do resultado calculado, atualiza o valor bruto
+    if val_final != val_calculado_exibido:
       st.session_state.matriz_raw[celula_ref] = val_final
       houve_alteracao = True
 
