@@ -177,7 +177,7 @@ with col_botoes:
             <a href="codigos" target="_self" class="btn-custom btn-codigos">CÓDIGOS ➔</a>
             <a href="lista_material" target="_self" class="btn-custom btn-lista">LISTA DE<br>MATERIAL</a>
             <a href="calculos" target="_self" class="btn-custom btn-calculos">CÁLCULOS</a>
-            <a href="base_dados" target="_self" class="btn-custom btn-bd">BASE DE<br>DADOS</a>
+            <a href="base_de_dados" target="_self" class="btn-custom btn-bd">BASE DE<br>DADOS</a>
         </div>
     """, unsafe_allow_html=True)
 
