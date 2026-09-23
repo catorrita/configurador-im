@@ -1,5 +1,7 @@
 import io
+import json
 import re
+from github import Github, GithubException
 import openpyxl
 import pandas as pd
 import streamlit as st
@@ -8,24 +10,124 @@ import streamlit as st
 st.set_page_config(page_title="Planilha Interativa", layout="wide")
 
 # ==========================================
+# CONFIGURAÇÃO DO GITHUB
+# ==========================================
+GITHUB_TOKEN = st.secrets.get("GITHUB_TOKEN", "")
+GITHUB_REPO = st.secrets.get("GITHUB_REPO", "catorrita/configurador-im")
+# Caminho exato apontando para o arquivo no repositório
+FILE_PATH = st.secrets.get(
+    "GITHUB_FILE_PATH", "planilha-im/dados/planilha_salva.json"
+)
+
+
+@st.cache_resource
+def obter_repositorio_github():
+  if GITHUB_TOKEN and GITHUB_REPO:
+    try:
+      g = Github(GITHUB_TOKEN)
+      return g.get_repo(GITHUB_REPO)
+    except Exception as e:
+      st.error(f"Erro na conexão com o GitHub: {e}")
+  return None
+
+
+repo = obter_repositorio_github()
+
+
+# 1. Função para carregar os dados salvos do GitHub ao iniciar
+def carregar_dados_github():
+  if repo:
+    try:
+      content = repo.get_contents(FILE_PATH)
+      dados = json.loads(content.decoded_content.decode("utf-8"))
+      return dados
+    except GithubException as e:
+      if e.status == 404:
+        st.warning("⚠️ Arquivo de dados não encontrado no GitHub. Criando matriz em branco.")
+      else:
+        st.error(f"Erro ao carregar dados do GitHub: {e}")
+
+  # Matriz em branco padrão se o arquivo não existir
+  return {
+      f"{col}{lin}": ""
+      for lin in range(1, 31)
+      for col in [chr(i) for i in range(ord("A"), ord("U"))]
+  }
+
+
+# 2. Função acionada pelo Botão de Salvar
+def salvar_dados_github():
+  if not repo:
+    st.error(
+        "❌ Erro: GITHUB_TOKEN não configurado no st.secrets do Streamlit"
+        " Cloud!"
+    )
+    return False
+
+  conteudo_json = json.dumps(
+      st.session_state.matriz_raw, ensure_ascii=False, indent=2
+  )
+
+  try:
+    with st.spinner("💾 Gravando alterações no GitHub..."):
+      try:
+        # Atualiza o arquivo existente
+        content = repo.get_contents(FILE_PATH)
+        repo.update_file(
+            path=FILE_PATH,
+            message="Atualização da planilha via Streamlit",
+            content=conteudo_json,
+            sha=content.sha,
+        )
+      except GithubException as e:
+        if e.status == 404:
+          # Cria o arquivo/diretório se ainda não existir
+          repo.create_file(
+              path=FILE_PATH,
+              message="Criação inicial do arquivo da planilha",
+              content=conteudo_json,
+          )
+        else:
+          raise e
+
+    st.session_state.alteracoes_pendentes = False
+    st.success("✅ Planilha salva com sucesso no GitHub!")
+    return True
+  except Exception as e:
+    st.error(f"Erro ao salvar no GitHub: {e}")
+    return False
+
+
+# Inicialização de Session States
+COLUNAS_EXCEL = [chr(i) for i in range(ord("A"), ord("U"))]  # Colunas A até T
+TOTAL_LINHAS = 30
+
+if "matriz_raw" not in st.session_state:
+  st.session_state.matriz_raw = carregar_dados_github()
+
+if "alteracoes_pendentes" not in st.session_state:
+  st.session_state.alteracoes_pendentes = False
+
+# ==========================================
 # 1. BARRA SUPERIOR E NAVEGAÇÃO
 # ==========================================
-col_voltar, col_espaco, col_exportar = st.columns([2, 5, 2])
+col_voltar, col_status, col_salvar, col_exportar = st.columns([2, 3, 2, 2])
 
 with col_voltar:
   if st.button("← Ir ao Início", use_container_width=True):
     st.switch_page("app.py")
 
-COLUNAS_EXCEL = [chr(i) for i in range(ord("A"), ord("U"))]  # Colunas A até T
-TOTAL_LINHAS = 30
+with col_status:
+  if st.session_state.alteracoes_pendentes:
+    st.warning("⚠️ Existem alterações não salvas!")
+  else:
+    st.caption("✔️ Tudo sincronizado com o GitHub.")
 
-# Estrutura principal: guarda o que o usuário digita (valores ou fórmulas)
-if "matriz_raw" not in st.session_state:
-  st.session_state.matriz_raw = {
-      f"{col}{lin}": ""
-      for lin in range(1, TOTAL_LINHAS + 1)
-      for col in COLUNAS_EXCEL
-  }
+with col_salvar:
+  if st.button(
+      "💾 Salvar no GitHub", use_container_width=True, type="primary"
+  ):
+    salvar_dados_github()
 
 
 # Função para obter dados de uma célula específica no formato de coordenadas
@@ -104,10 +206,6 @@ def avaliar_formula(formula_str, mapa_dados, historico_visitados=None):
     expressao = formula_str[1:].strip()
     expressao_upper = expressao.upper()
 
-    # ------------------------------------------
-    # 1. TRATAMENTO DE FUNÇÕES DO EXCEL
-    # ------------------------------------------
-
     # --- SOMA ---
     match_soma = re.match(r"^SOMA\((.+)\)$", expressao_upper)
     if match_soma:
@@ -120,9 +218,13 @@ def avaliar_formula(formula_str, mapa_dados, historico_visitados=None):
         for c in range(min(c_ini, c_fim), max(c_ini, c_fim) + 1):
           for l in range(min(l_ini, l_fim), max(l_ini, l_fim) + 1):
             ref = f"{COLUNAS_EXCEL[c]}{l}"
-            total += obter_valor_numerico(ref, mapa_dados, historico_visitados.copy())
+            total += obter_valor_numerico(
+                ref, mapa_dados, historico_visitados.copy()
+            )
       else:
-        total = obter_valor_numerico(arg, mapa_dados, historico_visitados.copy())
+        total = obter_valor_numerico(
+            arg, mapa_dados, historico_visitados.copy()
+        )
 
       return int(total) if total.is_integer() else round(total, 4)
 
@@ -149,13 +251,25 @@ def avaliar_formula(formula_str, mapa_dados, historico_visitados=None):
 
         total = 0.0
 
-        for c in range(min(c_ini_crit, c_fim_crit), max(c_ini_crit, c_fim_crit) + 1):
-          for l in range(min(l_ini_crit, l_fim_crit), max(l_ini_crit, l_fim_crit) + 1):
+        for c in range(
+            min(c_ini_crit, c_fim_crit), max(c_ini_crit, c_fim_crit) + 1
+        ):
+          for l in range(
+              min(l_ini_crit, l_fim_crit), max(l_ini_crit, l_fim_crit) + 1
+          ):
             c_crit_ref = f"{COLUNAS_EXCEL[c]}{l}"
-            v_crit = str(obter_valor_celula(c_crit_ref, mapa_dados, historico_visitados.copy())).strip()
+            v_crit = str(
+                obter_valor_celula(
+                    c_crit_ref, mapa_dados, historico_visitados.copy()
+                )
+            ).strip()
 
             if re.match(r"^[A-Z]+\d+$", criterio_raw):
-              criterio_val = str(obter_valor_celula(criterio_raw, mapa_dados, historico_visitados.copy())).strip()
+              criterio_val = str(
+                  obter_valor_celula(
+                      criterio_raw, mapa_dados, historico_visitados.copy()
+                  )
+              ).strip()
             else:
               criterio_val = criterio_raw
 
@@ -166,9 +280,14 @@ def avaliar_formula(formula_str, mapa_dados, historico_visitados=None):
               target_c = c_ini_soma + delta_col
               target_l = l_ini_soma + delta_lin
 
-              if 0 <= target_c < len(COLUNAS_EXCEL) and 1 <= target_l <= TOTAL_LINHAS:
+              if (
+                  0 <= target_c < len(COLUNAS_EXCEL)
+                  and 1 <= target_l <= TOTAL_LINHAS
+              ):
                 c_soma_ref = f"{COLUNAS_EXCEL[target_c]}{target_l}"
-                v_soma = obter_valor_numerico(c_soma_ref, mapa_dados, historico_visitados.copy())
+                v_soma = obter_valor_numerico(
+                    c_soma_ref, mapa_dados, historico_visitados.copy()
+                )
                 total += v_soma
 
         return int(total) if total.is_integer() else round(total, 4)
@@ -192,10 +311,18 @@ def avaliar_formula(formula_str, mapa_dados, historico_visitados=None):
         for c in range(min(c_ini, c_fim), max(c_ini, c_fim) + 1):
           for l in range(min(l_ini, l_fim), max(l_ini, l_fim) + 1):
             c_ref = f"{COLUNAS_EXCEL[c]}{l}"
-            v_crit = str(obter_valor_celula(c_ref, mapa_dados, historico_visitados.copy())).strip()
+            v_crit = str(
+                obter_valor_celula(
+                    c_ref, mapa_dados, historico_visitados.copy()
+                )
+            ).strip()
 
             if re.match(r"^[A-Z]+\d+$", criterio_raw):
-              criterio_val = str(obter_valor_celula(criterio_raw, mapa_dados, historico_visitados.copy())).strip()
+              criterio_val = str(
+                  obter_valor_celula(
+                      criterio_raw, mapa_dados, historico_visitados.copy()
+                  )
+              ).strip()
             else:
               criterio_val = criterio_raw
 
@@ -214,7 +341,11 @@ def avaliar_formula(formula_str, mapa_dados, historico_visitados=None):
         col_idx = int(args[2])
 
         if re.match(r"^[A-Z]+\d+$", v_busca_raw):
-          v_busca = str(obter_valor_celula(v_busca_raw, mapa_dados, historico_visitados.copy())).strip()
+          v_busca = str(
+              obter_valor_celula(
+                  v_busca_raw, mapa_dados, historico_visitados.copy()
+              )
+          ).strip()
         else:
           v_busca = v_busca_raw
 
@@ -224,19 +355,23 @@ def avaliar_formula(formula_str, mapa_dados, historico_visitados=None):
 
         for l in range(min(l_ini, l_fim), max(l_ini, l_fim) + 1):
           celula_chave = f"{COLUNAS_EXCEL[c_ini]}{l}"
-          v_chave = str(obter_valor_celula(celula_chave, mapa_dados, historico_visitados.copy())).strip()
+          v_chave = str(
+              obter_valor_celula(
+                  celula_chave, mapa_dados, historico_visitados.copy()
+              )
+          ).strip()
 
           if v_chave.upper() == v_busca.upper():
             target_c = c_ini + col_idx - 1
             if target_c <= c_fim:
               celula_alvo = f"{COLUNAS_EXCEL[target_c]}{l}"
-              return obter_valor_celula(celula_alvo, mapa_dados, historico_visitados.copy())
+              return obter_valor_celula(
+                  celula_alvo, mapa_dados, historico_visitados.copy()
+              )
 
         return "#N/A"
 
-    # ------------------------------------------
-    # 2. AVALIAÇÃO MATEMÁTICA PADRÃO (A1+B1, etc)
-    # ------------------------------------------
+    # Avaliação Matemática Padrão
     refs = re.findall(r"\b[A-Z]+\d+\b", expressao_upper)
     for ref in refs:
       val = obter_valor_numerico(ref, mapa_dados, historico_visitados.copy())
@@ -313,12 +448,11 @@ def gerar_excel():
 with col_exportar:
   excel_file = gerar_excel()
   st.download_button(
-      label="📥 Exportar Planilha",
+      label="📥 Exportar Excel",
       data=excel_file,
       file_name="planilha.xlsx",
       mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       use_container_width=True,
-      type="primary",
   )
 
 st.divider()
@@ -343,8 +477,10 @@ if val_atual == "None":
 
 
 def atualizar_barra_fx():
-  novo_texto = st.session_state[f"input_fx_{celula_selecionada}"]
-  st.session_state.matriz_raw[celula_selecionada] = novo_texto.strip()
+  novo_texto = st.session_state[f"input_fx_{celula_selecionada}"].strip()
+  if st.session_state.matriz_raw.get(celula_selecionada, "") != novo_texto:
+    st.session_state.matriz_raw[celula_selecionada] = novo_texto
+    st.session_state.alteracoes_pendentes = True
 
 
 with col_fx:
@@ -380,4 +516,5 @@ for lin_idx, lin in enumerate(range(1, TOTAL_LINHAS + 1)):
       houve_alteracao = True
 
 if houve_alteracao:
+  st.session_state.alteracoes_pendentes = True
   st.rerun()
