@@ -152,7 +152,7 @@ st.divider()
 # ==========================================
 # 2. BARRA DE FÓRMULAS ESTILO EXCEL (fx)
 # ==========================================
-st.title("📊 Planilha Interativa")
+st.title("Planilha Interativa")
 
 opcoes_celulas = [
     f"{col}{lin}" for lin in range(1, TOTAL_LINHAS + 1) for col in COLUNAS_EXCEL
