@@ -15,43 +15,42 @@ with col_voltar:
   if st.button("← Ir ao Início", use_container_width=True):
     st.switch_page("app.py")
 
-# Criamos a estrutura de colunas do Excel (A até T)
-COLUNAS_EXCEL = [chr(i) for i in range(ord("A"), ord("U"))]  # A até T
+# Criamos a estrutura de colunas A até T
+COLUNAS_EXCEL = [chr(i) for i in range(ord("A"), ord("U"))]
 
-# Inicializa no session_state com índice de 1 a 30 (como no Excel)
-if "df_formulas" not in st.session_state:
-  dados_vazios = [["" for _ in COLUNAS_EXCEL] for _ in range(30)]
-  df_init = pd.DataFrame(dados_vazios, columns=COLUNAS_EXCEL)
-  df_init.index = range(1, 31)  # Define linhas começando em 1
-  st.session_state.df_formulas = df_init
+# Inicializa o estado da planilha
+if "matriz_dados" not in st.session_state:
+  # Matriz para guardar exatamente o que o usuário digita (inclusive =a1+b1)
+  st.session_state.matriz_dados = [
+      ["" for _ in COLUNAS_EXCEL] for _ in range(30)
+  ]
 
 
-# Função de cálculo de fórmulas em tempo real
-def calcular_planilha(df_origem):
-  df_calc = df_origem.copy()
+# Função de cálculo
+def processar_calculos(matriz_entrada):
+  # Cria DataFrame com índices numéricos visíveis de 1 a 30
+  df_calc = pd.DataFrame(
+      matriz_entrada,
+      columns=COLUNAS_EXCEL,
+      index=[f"Linha {i+1}" for i in range(len(matriz_entrada))],
+  )
 
-  for r_idx in range(len(df_calc)):
-    for c_idx, col in enumerate(df_calc.columns):
-      val = str(df_calc.iat[r_idx, c_idx]).strip()
+  for r_idx in range(len(matriz_entrada)):
+    for c_idx in range(len(COLUNAS_EXCEL)):
+      val = str(matriz_entrada[r_idx][c_idx]).strip()
 
       if val.startswith("="):
         try:
           expressao = val[1:].upper()
 
-          # Substitui referências de células (ex: A1, B1, A2) pelos valores das células
-          for row in range(1, len(df_calc) + 1):
-            for col_letter_idx, col_letter in enumerate(df_calc.columns):
+          # Substitui referências de células (ex: A1, B1) pelos valores
+          for row in range(1, len(matriz_entrada) + 1):
+            for col_letter_idx, col_letter in enumerate(COLUNAS_EXCEL):
               celula_ref = f"{col_letter}{row}"
               if celula_ref in expressao:
                 val_celula = str(
-                    df_origem.iat[row - 1, col_letter_idx]
+                    matriz_entrada[row - 1][col_letter_idx]
                 ).strip()
-
-                # Se a célula referenciada for outra fórmula, calcula ela primeiro
-                if val_celula.startswith("="):
-                  val_celula = str(
-                      calcular_planilha(df_origem).iat[row - 1, col_letter_idx]
-                  )
 
                 val_num = (
                     val_celula
@@ -73,18 +72,18 @@ def calcular_planilha(df_origem):
 
 
 # Gerador de arquivo Excel .xlsx
-def gerar_excel(df_formulas):
+def gerar_excel(matriz):
   buffer = io.BytesIO()
   wb = openpyxl.Workbook()
   ws = wb.active
   ws.title = "Planilha"
 
-  ws.append(list(df_formulas.columns))
+  ws.append(COLUNAS_EXCEL)
 
-  for _, row in df_formulas.iterrows():
+  for row in matriz:
     linha = []
     for val in row:
-      if pd.isna(val) or val is None:
+      if val is None or val == "":
         linha.append("")
       else:
         val_str = str(val).strip()
@@ -103,7 +102,7 @@ def gerar_excel(df_formulas):
 
 
 with col_exportar:
-  excel_file = gerar_excel(st.session_state.df_formulas)
+  excel_file = gerar_excel(st.session_state.matriz_dados)
   st.download_button(
       label="📥 Exportar Planilha",
       data=excel_file,
@@ -116,45 +115,36 @@ with col_exportar:
 st.divider()
 
 # ==========================================
-# 2. PLANILHA ESTILO EXCEL
+# 2. PLANILHA
 # ==========================================
-st.title("📊 Planilha")
+st.title("📊 Planilha Interativa")
 
-# Calcula os resultados mantendo o índice numérico nativo de 1 a N
-df_exibicao = calcular_planilha(st.session_state.df_formulas)
+col_info, col_btn = st.columns([7, 2])
+with col_info:
+  st.caption(
+      "Digite os dados ou fórmulas (ex: `=A1+B1`). Pressione **Calcular /"
+      " Atualizar** abaixo para processar os resultados."
+  )
+with col_btn:
+  btn_calcular = st.button(
+      "🔄 Calcular / Atualizar", type="primary", use_container_width=True
+  )
 
-# Renderiza a tabela usando o índice de linhas nativo
+# Gera a visualização atual
+df_exibicao = processar_calculos(st.session_state.matriz_dados)
+
+# Renderiza a tabela com o rótulo da linha visível na extrema esquerda
 df_editado = st.data_editor(
     df_exibicao,
-    num_rows="dynamic",
     use_container_width=True,
-    height=600,
-    key="excel_grid_v2",
+    height=550,
+    key="grid_matriz_v3",
 )
 
-# Atualiza as fórmulas e valores na sessão se houver alteração
-if not df_editado.equals(df_exibicao):
-  # Mantém o índice ajustado caso linhas sejam inseridas/deletadas
-  df_editado.index = range(1, len(df_editado) + 1)
-
-  if len(df_editado) != len(st.session_state.df_formulas):
-    novos_dados = [
-        ["" for _ in COLUNAS_EXCEL] for _ in range(len(df_editado))
-    ]
-    st.session_state.df_formulas = pd.DataFrame(
-        novos_dados, columns=COLUNAS_EXCEL, index=range(1, len(df_editado) + 1)
-    )
-
-  for r_idx in range(len(df_editado)):
-    for c_idx in range(len(df_editado.columns)):
-      val_antigo = str(
-          st.session_state.df_formulas.iat[r_idx, c_idx]
-      ).strip()
+# Atualiza a matriz ao clicar no botão ou alterar a tabela
+if btn_calcular:
+  for r_idx in range(len(st.session_state.matriz_dados)):
+    for c_idx in range(len(COLUNAS_EXCEL)):
       val_novo = str(df_editado.iat[r_idx, c_idx]).strip()
-
-      if not val_antigo.startswith("="):
-        st.session_state.df_formulas.iat[r_idx, c_idx] = val_novo
-      elif val_novo.startswith("="):
-        st.session_state.df_formulas.iat[r_idx, c_idx] = val_novo
-
+      st.session_state.matriz_dados[r_idx][c_idx] = val_novo
   st.rerun()
