@@ -40,10 +40,17 @@ def carregar_dados_github():
     try:
       content = repo.get_contents(FILE_PATH)
       dados = json.loads(content.decoded_content.decode("utf-8"))
+      # Limpa possíveis valores "None" salvos no JSON antigo
+      for key, val in dados.items():
+        if str(val).strip().lower() in ["none", "nan", "null"]:
+          dados[key] = ""
       return dados
     except GithubException as e:
       if e.status == 404:
-        st.warning("⚠️ Arquivo de dados não encontrado no GitHub. Criando matriz em branco.")
+        st.warning(
+            "⚠️ Arquivo de dados não encontrado no GitHub. Criando matriz em"
+            " branco."
+        )
       else:
         st.error(f"Erro ao carregar dados do GitHub: {e}")
 
@@ -150,7 +157,7 @@ def obter_valor_celula(ref, mapa_dados, historico_visitados=None):
   historico_visitados.add(ref)
   conteudo = str(mapa_dados.get(ref, "")).strip()
 
-  if not conteudo or conteudo.lower() == "none":
+  if not conteudo or conteudo.lower() in ["none", "nan", "null"]:
     return ""
 
   if conteudo.startswith("="):
@@ -399,11 +406,20 @@ def gerar_dataframe_calculado():
       celula_ref = f"{col}{lin}"
       conteudo = str(mapa_raw.get(celula_ref, "")).strip()
 
-      if conteudo.startswith("="):
+      if not conteudo or conteudo.lower() in ["none", "nan", "null"]:
+        linha_vals.append("")
+      elif conteudo.startswith("="):
         res = avaliar_formula(conteudo, mapa_raw)
-        linha_vals.append("" if res is None or res == "None" else str(res))
+        if (
+            res is None
+            or str(res).lower() in ["none", "nan", "null"]
+            or res == "#ERRO!"
+        ):
+          linha_vals.append("")
+        else:
+          linha_vals.append(str(res))
       else:
-        linha_vals.append("" if conteudo == "None" else conteudo)
+        linha_vals.append(conteudo)
     dados_grid.append(linha_vals)
 
   df = pd.DataFrame(
@@ -429,7 +445,7 @@ def gerar_excel():
       celula_ref = f"{col}{lin}"
       val = str(st.session_state.matriz_raw.get(celula_ref, "")).strip()
 
-      if not val or val == "None":
+      if not val or val.lower() in ["none", "nan", "null"]:
         linha.append("")
       elif (
           val.replace(".", "", 1).replace("-", "", 1).isdigit()
@@ -471,13 +487,16 @@ col_celula, col_fx = st.columns([2, 8])
 with col_celula:
   celula_selecionada = st.selectbox("Célula", opcoes_celulas, index=0)
 
-val_atual = st.session_state.matriz_raw.get(celula_selecionada, "")
-if val_atual == "None":
+val_atual = str(st.session_state.matriz_raw.get(celula_selecionada, "")).strip()
+if val_atual.lower() in ["none", "nan", "null"]:
   val_atual = ""
 
 
 def atualizar_barra_fx():
   novo_texto = st.session_state[f"input_fx_{celula_selecionada}"].strip()
+  if novo_texto.lower() in ["none", "nan", "null"]:
+    novo_texto = ""
+
   if st.session_state.matriz_raw.get(celula_selecionada, "") != novo_texto:
     st.session_state.matriz_raw[celula_selecionada] = novo_texto
     st.session_state.alteracoes_pendentes = True
@@ -508,11 +527,22 @@ houve_alteracao = False
 for lin_idx, lin in enumerate(range(1, TOTAL_LINHAS + 1)):
   for col_idx, col in enumerate(COLUNAS_EXCEL):
     celula_ref = f"{col}{lin}"
-    val_digitado_grid = str(df_editado.iat[lin_idx, col_idx]).strip()
-    val_calculado_grid = str(df_exibicao.iat[lin_idx, col_idx]).strip()
+    val_digitado = df_editado.iat[lin_idx, col_idx]
 
-    if val_digitado_grid != val_calculado_grid:
-      st.session_state.matriz_raw[celula_ref] = val_digitado_grid
+    # Trata valores nulos/vazios para não converter em "None"
+    if (
+        pd.isna(val_digitado)
+        or val_digitado is None
+        or str(val_digitado).strip().lower() in ["none", "nan", "null"]
+    ):
+      val_final = ""
+    else:
+      val_final = str(val_digitado).strip()
+
+    val_anterior = str(st.session_state.matriz_raw.get(celula_ref, "")).strip()
+
+    if val_final != val_anterior:
+      st.session_state.matriz_raw[celula_ref] = val_final
       houve_alteracao = True
 
 if houve_alteracao:
