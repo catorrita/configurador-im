@@ -16,9 +16,9 @@ with col_voltar:
   if st.button("← Ir ao Início", use_container_width=True):
     st.switch_page("app.py")
 
-# Inicializa matriz de dados em branco (20 linhas x 8 colunas)
+# Inicializa matriz de dados em branco (15 linhas x 8 colunas)
 if "dados_planilha" not in st.session_state:
-  st.session_state.dados_planilha = [["" for _ in range(8)] for _ in range(20)]
+  st.session_state.dados_planilha = [["" for _ in range(8)] for _ in range(15)]
 
 
 # Função para exportar para .xlsx
@@ -27,7 +27,6 @@ def exportar_para_excel(matriz_dados):
   ws = wb.active
   ws.title = "Planilha"
 
-  # Cabeçalho A, B, C...
   colunas = ["A", "B", "C", "D", "E", "F", "G", "H"]
   ws.append(colunas)
 
@@ -37,7 +36,6 @@ def exportar_para_excel(matriz_dados):
       if cell is None:
         linha_convertida.append("")
       else:
-        # Se for número, converte para valor numérico no Excel
         cell_str = str(cell).strip()
         if cell_str.replace(".", "", 1).replace("-", "", 1).isdigit():
           linha_convertida.append(
@@ -75,17 +73,21 @@ st.caption(
     " `=AVERAGE(...)` etc."
 )
 
-# Renderiza a planilha Handsontable com suporte nativo a fórmulas ativado
-resultado = st_handsontable(
-    st.session_state.dados_planilha,
-    colHeaders=["A", "B", "C", "D", "E", "F", "G", "H"],
-    rowHeaders=True,
-    formulas=True,  # Liga o motor de fórmulas no navegador
-    contextMenu=True,  # Permite clicar com o botão direito para inserir/remover linhas
-    height=550,
-    licenseKey="non-commercial-and-evaluation",
-)
+# Envolva o componente em um container fixo com chave única para evitar erro no DOM
+container_grid = st.container()
 
-# Guarda o estado atualizado da planilha
-if resultado and "data" in resultado:
+with container_grid:
+  resultado = st_handsontable(
+      st.session_state.dados_planilha,
+      colHeaders=["A", "B", "C", "D", "E", "F", "G", "H"],
+      rowHeaders=True,
+      formulas=True,  # Habilita fórmulas no navegador
+      contextMenu=True,
+      height=500,
+      licenseKey="non-commercial-and-evaluation",
+      key="handsontable_grid_main",  # Chave única para evitar conflitos de renderização
+  )
+
+# Atualiza a sessão silenciosamente
+if resultado and isinstance(resultado, dict) and "data" in resultado:
   st.session_state.dados_planilha = resultado["data"]
