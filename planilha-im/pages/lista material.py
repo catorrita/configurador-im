@@ -28,24 +28,13 @@ if "matriz_raw" not in st.session_state:
   }
 
 
-# Função auxiliar para expandir intervalos (ex: "A1:A5" ou "E3:F9")
-def expandir_intervalo(intervalo_str):
-  intervalo_str = intervalo_str.strip().upper()
-  if ":" not in intervalo_str:
-    return [intervalo_str]
-
-  inicio, fim = intervalo_str.split(":")
-  col_ini, lin_ini = re.match(r"([A-Z]+)(\d+)", inicio).groups()
-  col_fim, lin_fim = re.match(r"([A-Z]+)(\d+)", fim).groups()
-
-  idx_col_ini = COLUNAS_EXCEL.index(col_ini)
-  idx_col_fim = COLUNAS_EXCEL.index(col_fim)
-
-  celulas = []
-  for l in range(min(int(lin_ini), int(lin_fim)), max(int(lin_ini), int(lin_fim)) + 1):
-    for c in range(min(idx_col_ini, idx_col_fim), max(idx_col_ini, idx_col_fim) + 1):
-      celulas.append(f"{COLUNAS_EXCEL[c]}{l}")
-  return celulas
+# Função para obter dados de uma célula específica no formato de coordenadas
+def parse_celula(ref):
+  match = re.match(r"([A-Z]+)(\d+)", ref.strip().upper())
+  if match:
+    col_str, lin_str = match.groups()
+    return COLUNAS_EXCEL.index(col_str), int(lin_str)
+  return None, None
 
 
 # Função auxiliar para obter valor exato/resolvido de uma célula
@@ -80,7 +69,6 @@ def obter_valor_numerico(ref, mapa_dados, historico_visitados=None):
 
 # Função para dividir argumentos por vírgula ou ponto e vírgula respeitando aspas
 def dividir_argumentos(args_str):
-  # Normaliza delimitadores fora de aspas
   partes = []
   atual = []
   em_aspas = False
@@ -124,8 +112,18 @@ def avaliar_formula(formula_str, mapa_dados, historico_visitados=None):
     match_soma = re.match(r"^SOMA\((.+)\)$", expressao_upper)
     if match_soma:
       arg = match_soma.group(1)
-      celulas = expandir_intervalo(arg)
-      total = sum(obter_valor_numerico(c, mapa_dados, historico_visitados.copy()) for c in celulas)
+      total = 0.0
+      if ":" in arg:
+        ini, fim = arg.split(":")
+        c_ini, l_ini = parse_celula(ini)
+        c_fim, l_fim = parse_celula(fim)
+        for c in range(min(c_ini, c_fim), max(c_ini, c_fim) + 1):
+          for l in range(min(l_ini, l_fim), max(l_ini, l_fim) + 1):
+            ref = f"{COLUNAS_EXCEL[c]}{l}"
+            total += obter_valor_numerico(ref, mapa_dados, historico_visitados.copy())
+      else:
+        total = obter_valor_numerico(arg, mapa_dados, historico_visitados.copy())
+
       return int(total) if total.is_integer() else round(total, 4)
 
     # --- SOMASE ---
@@ -133,23 +131,49 @@ def avaliar_formula(formula_str, mapa_dados, historico_visitados=None):
     if match_somase:
       args = dividir_argumentos(match_somase.group(1))
       if len(args) >= 2:
-        interv_crit = expandir_intervalo(args[0])
+        interv_crit_str = args[0]
         criterio_raw = args[1].strip().strip('"\'')
-        interv_soma = expandir_intervalo(args[2]) if len(args) >= 3 else interv_crit
+        interv_soma_str = args[2] if len(args) >= 3 else interv_crit_str
+
+        # Define limites do intervalo de critério
+        if ":" in interv_crit_str:
+          c_ini_crit, l_ini_crit = parse_celula(interv_crit_str.split(":")[0])
+          c_fim_crit, l_fim_crit = parse_celula(interv_crit_str.split(":")[1])
+        else:
+          c_ini_crit, l_ini_crit = parse_celula(interv_crit_str)
+          c_fim_crit, l_fim_crit = parse_celula(interv_crit_str)
+
+        # Define início do intervalo de soma
+        if ":" in interv_soma_str:
+          c_ini_soma, l_ini_soma = parse_celula(interv_soma_str.split(":")[0])
+        else:
+          c_ini_soma, l_ini_soma = parse_celula(interv_soma_str)
 
         total = 0.0
-        for idx, c_crit in enumerate(interv_crit):
-          v_crit = str(obter_valor_celula(c_crit, mapa_dados, historico_visitados.copy())).strip()
 
-          if re.match(r"^[A-Z]+\d+$", criterio_raw):
-            criterio_val = str(obter_valor_celula(criterio_raw, mapa_dados, historico_visitados.copy())).strip()
-          else:
-            criterio_val = criterio_raw
+        # Percorre a matriz de critério mantendo a correspondência exata do Excel
+        for c in range(min(c_ini_crit, c_fim_crit), max(c_ini_crit, c_fim_crit) + 1):
+          for l in range(min(l_ini_crit, l_fim_crit), max(l_ini_crit, l_fim_crit) + 1):
+            c_crit_ref = f"{COLUNAS_EXCEL[c]}{l}"
+            v_crit = str(obter_valor_celula(c_crit_ref, mapa_dados, historico_visitados.copy())).strip()
 
-          if v_crit.upper() == criterio_val.upper():
-            if idx < len(interv_soma):
-              v_soma = obter_valor_numerico(interv_soma[idx], mapa_dados, historico_visitados.copy())
-              total += v_soma
+            if re.match(r"^[A-Z]+\d+$", criterio_raw):
+              criterio_val = str(obter_valor_celula(criterio_raw, mapa_dados, historico_visitados.copy())).strip()
+            else:
+              criterio_val = criterio_raw
+
+            if v_crit.upper() == criterio_val.upper():
+              # Calcula deslocamento para a célula de soma
+              delta_col = c - min(c_ini_crit, c_fim_crit)
+              delta_lin = l - min(l_ini_crit, l_fim_crit)
+
+              target_c = c_ini_soma + delta_col
+              target_l = l_ini_soma + delta_lin
+
+              if 0 <= target_c < len(COLUNAS_EXCEL) and 1 <= target_l <= TOTAL_LINHAS:
+                c_soma_ref = f"{COLUNAS_EXCEL[target_c]}{target_l}"
+                v_soma = obter_valor_numerico(c_soma_ref, mapa_dados, historico_visitados.copy())
+                total += v_soma
 
         return int(total) if total.is_integer() else round(total, 4)
 
@@ -158,20 +182,29 @@ def avaliar_formula(formula_str, mapa_dados, historico_visitados=None):
     if match_contse:
       args = dividir_argumentos(match_contse.group(1))
       if len(args) == 2:
-        interv = expandir_intervalo(args[0])
+        interv_str = args[0]
         criterio_raw = args[1].strip().strip('"\'')
 
+        if ":" in interv_str:
+          c_ini, l_ini = parse_celula(interv_str.split(":")[0])
+          c_fim, l_fim = parse_celula(interv_str.split(":")[1])
+        else:
+          c_ini, l_ini = parse_celula(interv_str)
+          c_fim, l_fim = parse_celula(interv_str)
+
         count = 0
-        for c_crit in interv:
-          v_crit = str(obter_valor_celula(c_crit, mapa_dados, historico_visitados.copy())).strip()
+        for c in range(min(c_ini, c_fim), max(c_ini, c_fim) + 1):
+          for l in range(min(l_ini, l_fim), max(l_ini, l_fim) + 1):
+            c_ref = f"{COLUNAS_EXCEL[c]}{l}"
+            v_crit = str(obter_valor_celula(c_ref, mapa_dados, historico_visitados.copy())).strip()
 
-          if re.match(r"^[A-Z]+\d+$", criterio_raw):
-            criterio_val = str(obter_valor_celula(criterio_raw, mapa_dados, historico_visitados.copy())).strip()
-          else:
-            criterio_val = criterio_raw
+            if re.match(r"^[A-Z]+\d+$", criterio_raw):
+              criterio_val = str(obter_valor_celula(criterio_raw, mapa_dados, historico_visitados.copy())).strip()
+            else:
+              criterio_val = criterio_raw
 
-          if v_crit.upper() == criterio_val.upper():
-            count += 1
+            if v_crit.upper() == criterio_val.upper():
+              count += 1
 
         return count
 
@@ -190,20 +223,17 @@ def avaliar_formula(formula_str, mapa_dados, historico_visitados=None):
           v_busca = v_busca_raw
 
         inicio, fim = matriz_str.split(":")
-        col_ini, lin_ini = re.match(r"([A-Z]+)(\d+)", inicio).groups()
-        col_fim, lin_fim = re.match(r"([A-Z]+)(\d+)", fim).groups()
+        c_ini, l_ini = parse_celula(inicio)
+        c_fim, l_fim = parse_celula(fim)
 
-        idx_c_ini = COLUNAS_EXCEL.index(col_ini)
-        idx_c_fim = COLUNAS_EXCEL.index(col_fim)
-
-        for l in range(int(lin_ini), int(lin_fim) + 1):
-          celula_chave = f"{COLUNAS_EXCEL[idx_c_ini]}{l}"
+        for l in range(min(l_ini, l_fim), max(l_ini, l_fim) + 1):
+          celula_chave = f"{COLUNAS_EXCEL[c_ini]}{l}"
           v_chave = str(obter_valor_celula(celula_chave, mapa_dados, historico_visitados.copy())).strip()
 
           if v_chave.upper() == v_busca.upper():
-            target_col_idx = idx_c_ini + col_idx - 1
-            if target_col_idx <= idx_c_fim:
-              celula_alvo = f"{COLUNAS_EXCEL[target_col_idx]}{l}"
+            target_c = c_ini + col_idx - 1
+            if target_c <= c_fim:
+              celula_alvo = f"{COLUNAS_EXCEL[target_c]}{l}"
               return obter_valor_celula(celula_alvo, mapa_dados, historico_visitados.copy())
 
         return "#N/A"
@@ -339,7 +369,7 @@ df_editado = st.data_editor(
     df_exibicao,
     use_container_width=True,
     height=550,
-    key="grid_excel_v6",
+    key="grid_excel_v7",
 )
 
 houve_alteracao = False
