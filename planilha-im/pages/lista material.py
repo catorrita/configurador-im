@@ -2,13 +2,13 @@ import io
 import openpyxl
 import pandas as pd
 import streamlit as st
+from streamlit_handsontable import st_handsontable
 
 # Configuração da página
-st.set_page_config(page_title="Lista de Material", layout="wide")
-
+st.set_page_config(page_title="Planilha Interativa", layout="wide")
 
 # ==========================================
-# 1. BOTÕES NO TOPO DA PÁGINA
+# 1. BOTÕES NO TOPO
 # ==========================================
 col_voltar, col_espaco, col_exportar = st.columns([2, 5, 2])
 
@@ -16,53 +16,49 @@ with col_voltar:
   if st.button("← Ir ao Início", use_container_width=True):
     st.switch_page("app.py")
 
-
-# Inicializa uma planilha limpa de 15 linhas x 6 colunas na sessão
-if "df_planilha" not in st.session_state:
-  colunas = ["A", "B", "C", "D", "E", "F"]
-  dados_vazios = [["" for _ in colunas] for _ in range(15)]
-  st.session_state.df_planilha = pd.DataFrame(dados_vazios, columns=colunas)
+# Inicializa matriz de dados em branco (20 linhas x 8 colunas)
+if "dados_planilha" not in st.session_state:
+  st.session_state.dados_planilha = [["" for _ in range(8)] for _ in range(20)]
 
 
-# Função para gerar o arquivo .xlsx mantendo texto, números e fórmulas
-def gerar_excel(df):
-  buffer = io.BytesIO()
+# Função para exportar para .xlsx
+def exportar_para_excel(matriz_dados):
   wb = openpyxl.Workbook()
   ws = wb.active
   ws.title = "Planilha"
 
-  # Escreve o cabeçalho
-  ws.append(list(df.columns))
+  # Cabeçalho A, B, C...
+  colunas = ["A", "B", "C", "D", "E", "F", "G", "H"]
+  ws.append(colunas)
 
-  # Escreve cada linha
-  for _, row in df.iterrows():
-    linha_valores = []
-    for val in row:
-      if pd.isna(val) or val is None:
-        linha_valores.append("")
+  for linha in matriz_dados:
+    linha_convertida = []
+    for cell in linha:
+      if cell is None:
+        linha_convertida.append("")
       else:
-        val_str = str(val).strip()
-        # Se for número inteiro ou decimal, converte para salvar correto no Excel
-        if val_str.replace(".", "", 1).replace("-", "", 1).isdigit():
-          if "." in val_str:
-            linha_valores.append(float(val_str))
-          else:
-            linha_valores.append(int(val_str))
+        # Se for número, converte para valor numérico no Excel
+        cell_str = str(cell).strip()
+        if cell_str.replace(".", "", 1).replace("-", "", 1).isdigit():
+          linha_convertida.append(
+              float(cell_str) if "." in cell_str else int(cell_str)
+          )
         else:
-          linha_valores.append(val_str)
-    ws.append(linha_valores)
+          linha_convertida.append(cell)
+    ws.append(linha_convertida)
 
+  buffer = io.BytesIO()
   wb.save(buffer)
   buffer.seek(0)
   return buffer
 
 
 with col_exportar:
-  excel_file = gerar_excel(st.session_state.df_planilha)
+  excel_bytes = exportar_para_excel(st.session_state.dados_planilha)
   st.download_button(
       label="📥 Exportar Planilha",
-      data=excel_file,
-      file_name="planilha_material.xlsx",
+      data=excel_bytes,
+      file_name="planilha_calculada.xlsx",
       mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       use_container_width=True,
       type="primary",
@@ -71,22 +67,25 @@ with col_exportar:
 st.divider()
 
 # ==========================================
-# 2. ÁREA DA PLANILHA INTERATIVA
+# 2. PLANILHA COM FÓRMULAS INTERATIVAS
 # ==========================================
-st.title("📊 Planilha de Materiais")
+st.title("📊 Planilha Interativa")
 st.caption(
-    "Edite as células abaixo. Você pode adicionar ou remover linhas livremente"
-    " no botão '+' ou no ícone da lixeira. Ao digitar fórmulas como `=SUM(A1:A5)`"
-    " ou `=A1+B1`, elas serão preservadas ao baixar o Excel."
+    "Digite fórmulas diretamente nas células como `=B1+C1`, `=SUM(B1:C5)`,"
+    " `=AVERAGE(...)` etc."
 )
 
-# Editor nativo do Streamlit (funciona perfeitamente na nuvem)
-df_editado = st.data_editor(
-    st.session_state.df_planilha,
-    num_rows="dynamic",  # Permite adicionar/remover linhas
-    use_container_width=True,
+# Renderiza a planilha Handsontable com suporte nativo a fórmulas ativado
+resultado = st_handsontable(
+    st.session_state.dados_planilha,
+    colHeaders=["A", "B", "C", "D", "E", "F", "G", "H"],
+    rowHeaders=True,
+    formulas=True,  # Liga o motor de fórmulas no navegador
+    contextMenu=True,  # Permite clicar com o botão direito para inserir/remover linhas
     height=550,
+    licenseKey="non-commercial-and-evaluation",
 )
 
-# Atualiza a sessão
-st.session_state.df_planilha = df_editado
+# Guarda o estado atualizado da planilha
+if resultado and "data" in resultado:
+  st.session_state.dados_planilha = resultado["data"]
