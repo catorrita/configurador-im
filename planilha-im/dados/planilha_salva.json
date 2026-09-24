@@ -1,5 +1,6 @@
 {
   "A2": "",
+  "B3": "CÓDIGO SGE",
   "C2": "",
   "D2": "",
   "E2": "",
@@ -16,7 +17,4 @@
   "I12": "=PROCV(\"e\";I5:J9;2;FALSO)",
   "F2": "",
   "L10": "felipe rafael",
-  "B3": "CÓDIGO SGE",
-
-
 }
