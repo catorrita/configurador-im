@@ -102,7 +102,7 @@ def salvar_dados_github():
 
 # Inicialização de Session States
 COLUNAS_EXCEL = [chr(i) for i in range(ord("A"), ord("Z"))]  # A até T
-TOTAL_LINHAS = 150000
+TOTAL_LINHAS = 1000
 
 if "matriz_raw" not in st.session_state:
   st.session_state.matriz_raw = carregar_dados_github()
