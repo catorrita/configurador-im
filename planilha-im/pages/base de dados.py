@@ -28,7 +28,7 @@ CHAVE_MATRIZ = f"matriz_raw_{FILE_PATH}"
 CHAVE_ALTERACOES = f"alteracoes_pendentes_{FILE_PATH}"
 
 
-# 1. Carregamento via RAW (Público, NÃO usa o token, logo NÃO dá erro 401)
+# 1. Função para carregar os dados do GitHub (Usa RAW para evitar erro 401)
 def carregar_dados_github():
   try:
     url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/main/{FILE_PATH}"
@@ -40,9 +40,15 @@ def carregar_dados_github():
         if str(val).strip().lower() in ["none", "nan", "null"]:
           dados[key] = ""
       return dados
+    else:
+      st.warning(
+          f"⚠️ Arquivo {FILE_PATH} não encontrado no GitHub. Criando matriz em"
+          " branco."
+      )
   except Exception as e:
-    st.error(f"Erro ao carregar dados: {e}")
+    st.error(f"Erro ao carregar dados do GitHub: {e}")
 
+  # Retorna matriz vazia caso falhe
   return {
       f"{col}{lin}": ""
       for lin in range(1, 31)
@@ -50,50 +56,55 @@ def carregar_dados_github():
   }
 
 
-# 2. Salvamento (Usa o token apenas quando você clica em salvar)
+# 2. Função para salvar alterações no GitHub (Usa PyGithub com o Token)
 def salvar_dados_github(dados):
   try:
     if not GITHUB_TOKEN:
-      st.error("❌ GITHUB_TOKEN não configurado nos segredos do Streamlit.")
+      st.error(
+          "❌ GITHUB_TOKEN não configurado nos segredos (Secrets) do Streamlit."
+      )
       return False
 
     g = Github(GITHUB_TOKEN)
     repo = g.get_repo(GITHUB_REPO)
+
     conteudo_json = json.dumps(dados, ensure_ascii=False, indent=2)
 
     try:
       file = repo.get_contents(FILE_PATH)
       repo.update_file(
           path=FILE_PATH,
-          message="Atualizando via Planilha Interativa",
+          message="Atualizando base de dados via Planilha Interativa",
           content=conteudo_json,
           sha=file.sha,
       )
     except Exception:
+      # Se o arquivo não existir, ele cria
       repo.create_file(
           path=FILE_PATH,
-          message="Criando via Planilha Interativa",
+          message="Criando base de dados via Planilha Interativa",
           content=conteudo_json,
       )
+
     return True
   except GithubException as ge:
-    # Se o token estiver errado, o erro 401 aparecerá SOMENTE aqui ao tentar salvar
-    st.error(
-        f"Erro do GitHub ao salvar (Verifique seu Token):"
-        f" {ge.data.get('message', str(ge))}"
-    )
+    st.error(f"Erro do GitHub ao salvar: {ge.data.get('message', str(ge))}")
     return False
   except Exception as e:
     st.error(f"Erro inesperado ao salvar: {e}")
     return False
 
 
-# Inicialização segura
+# Inicialização do Session State isolado para esta página
 if CHAVE_MATRIZ not in st.session_state:
   st.session_state[CHAVE_MATRIZ] = carregar_dados_github()
 
 if CHAVE_ALTERACOES not in st.session_state:
   st.session_state[CHAVE_ALTERACOES] = {}
+
+
+
+
 
 
 @st.cache_resource
