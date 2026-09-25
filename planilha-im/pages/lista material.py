@@ -14,8 +14,10 @@ st.set_page_config(page_title="Planilha Interativa", layout="wide")
 # ==========================================
 GITHUB_TOKEN = st.secrets.get("GITHUB_TOKEN", "")
 GITHUB_REPO = st.secrets.get("GITHUB_REPO", "catorrita/configurador-im")
+
+# Alterado para buscar a chave específica da lista de material nos secrets
 FILE_PATH = st.secrets.get(
-    "GITHUB_FILE_PATH", "planilha-im/dados/Lista de material.json"
+    "FILE_PATH_LISTA", "planilha-im/dados/Lista_material.json"
 )
 
 @st.cache_resource
