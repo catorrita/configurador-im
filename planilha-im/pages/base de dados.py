@@ -14,8 +14,10 @@ st.set_page_config(page_title="Planilha Interativa", layout="wide")
 # ==========================================
 GITHUB_TOKEN = st.secrets.get("GITHUB_TOKEN", "")
 GITHUB_REPO = st.secrets.get("GITHUB_REPO", "catorrita/configurador-im")
+
+# Ajustado para puxar a chave correta do Streamlit Cloud e apontar para o base_dados.json
 FILE_PATH = st.secrets.get(
-    "GITHUB_FILE_PATH", "planilha-im/dados/planilha_salva.json"
+    "FILE_PATH_BASE", "planilha-im/dados/base_dados.json"
 )
 
 
