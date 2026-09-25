@@ -4,3 +4,4 @@ pandas
 openpyxl
 formulas
 PyGithub
+requests
