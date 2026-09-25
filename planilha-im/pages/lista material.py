@@ -4,6 +4,7 @@ import re
 from github import Github, GithubException
 import openpyxl
 import pandas as pd
+import requests
 import streamlit as st
 
 # Configuração da página
@@ -15,10 +16,38 @@ st.set_page_config(page_title="Planilha Interativa", layout="wide")
 GITHUB_TOKEN = st.secrets.get("GITHUB_TOKEN", "")
 GITHUB_REPO = st.secrets.get("GITHUB_REPO", "catorrita/configurador-im")
 
-# Alterado para buscar a chave específica da lista de material nos secrets
+# Caminho alterado especificamente para a lista de material
 FILE_PATH = st.secrets.get(
     "FILE_PATH_LISTA", "planilha-im/dados/Lista_material.json"
 )
+
+
+# 1. Carregamento via link RAW (Público/Direto, elimina o erro 401 de credenciais na leitura)
+@st.cache_data(ttl=1)
+def carregar_dados_github():
+  try:
+    url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/main/{FILE_PATH}"
+    response = requests.get(url)
+    if response.status_code == 200:
+      dados = response.json()
+      for key, val in dados.items():
+        if str(val).strip().lower() in ["none", "nan", "null"]:
+          dados[key] = ""
+      return dados
+    else:
+      st.warning(
+          "⚠️ Arquivo de dados não encontrado no GitHub. Criando matriz em"
+          " branco."
+      )
+  except Exception as e:
+    st.error(f"Erro ao carregar dados do GitHub: {e}")
+
+  return {
+      f"{col}{lin}": ""
+      for lin in range(1, 31)
+      for col in [chr(i) for i in range(ord("A"), ord("U"))]
+  }
+
 
 @st.cache_resource
 def obter_repositorio_github():
@@ -32,32 +61,6 @@ def obter_repositorio_github():
 
 
 repo = obter_repositorio_github()
-
-
-# 1. Função para carregar os dados salvos do GitHub ao iniciar
-def carregar_dados_github():
-  if repo:
-    try:
-      content = repo.get_contents(FILE_PATH)
-      dados = json.loads(content.decoded_content.decode("utf-8"))
-      for key, val in dados.items():
-        if str(val).strip().lower() in ["none", "nan", "null"]:
-          dados[key] = ""
-      return dados
-    except GithubException as e:
-      if e.status == 404:
-        st.warning(
-            "⚠️ Arquivo de dados não encontrado no GitHub. Criando matriz em"
-            " branco."
-        )
-      else:
-        st.error(f"Erro ao carregar dados do GitHub: {e}")
-
-  return {
-      f"{col}{lin}": ""
-      for lin in range(1, 31)
-      for col in [chr(i) for i in range(ord("A"), ord("U"))]
-  }
 
 
 # 2. Função acionada pelo Botão de Salvar
