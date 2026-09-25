@@ -20,9 +20,13 @@ FILE_PATH = st.secrets.get(
     "FILE_PATH_BASE", "planilha-im/dados/base_dados.json"
 )
 
+# Chaves dinâmicas baseadas no caminho do arquivo para isolar o session_state desta página
+CHAVE_MATRIZ = f"matriz_raw_{FILE_PATH}"
+CHAVE_ALTERACOES = f"alteracoes_pendentes_{FILE_PATH}"
+
 
 @st.cache_resource
-def obter_repositorio_github():
+def obter_repositorio_github(file_path):
   if GITHUB_TOKEN and GITHUB_REPO:
     try:
       g = Github(GITHUB_TOKEN)
@@ -32,7 +36,7 @@ def obter_repositorio_github():
   return None
 
 
-repo = obter_repositorio_github()
+repo = obter_repositorio_github(FILE_PATH)
 
 
 # 1. Função para carregar os dados salvos do GitHub ao iniciar
@@ -71,7 +75,7 @@ def salvar_dados_github():
     return False
 
   conteudo_json = json.dumps(
-      st.session_state.matriz_raw, ensure_ascii=False, indent=2
+      st.session_state[CHAVE_MATRIZ], ensure_ascii=False, indent=2
   )
 
   try:
@@ -94,7 +98,7 @@ def salvar_dados_github():
         else:
           raise e
 
-    st.session_state.alteracoes_pendentes = False
+    st.session_state[CHAVE_ALTERACOES] = False
     st.success("✅ Planilha salva com sucesso no GitHub!")
     return True
   except Exception as e:
@@ -106,11 +110,11 @@ def salvar_dados_github():
 COLUNAS_EXCEL = [chr(i) for i in range(ord("A"), ord("Z"))]  # A até T
 TOTAL_LINHAS = 1000
 
-if "matriz_raw" not in st.session_state:
-  st.session_state.matriz_raw = carregar_dados_github()
+if CHAVE_MATRIZ not in st.session_state:
+  st.session_state[CHAVE_MATRIZ] = carregar_dados_github()
 
-if "alteracoes_pendentes" not in st.session_state:
-  st.session_state.alteracoes_pendentes = False
+if CHAVE_ALTERACOES not in st.session_state:
+  st.session_state[CHAVE_ALTERACOES] = False
 
 # ==========================================
 # 1. BARRA SUPERIOR E NAVEGAÇÃO
@@ -122,7 +126,7 @@ with col_voltar:
     st.switch_page("app.py")
 
 with col_status:
-  if st.session_state.alteracoes_pendentes:
+  if st.session_state[CHAVE_ALTERACOES]:
     st.warning("⚠️ Existem alterações não salvas!")
   else:
     st.caption("✔️ Tudo sincronizado com o GitHub.")
@@ -392,7 +396,7 @@ def avaliar_formula(formula_str, mapa_dados, historico_visitados=None):
 # Função que monta a grade exibida no Streamlit
 def gerar_dataframe_calculado():
   dados_grid = []
-  mapa_raw = st.session_state.matriz_raw
+  mapa_raw = st.session_state[CHAVE_MATRIZ]
 
   for lin in range(1, TOTAL_LINHAS + 1):
     linha_vals = []
@@ -433,7 +437,7 @@ def gerar_excel():
     linha = []
     for col in COLUNAS_EXCEL:
       celula_ref = f"{col}{lin}"
-      val = str(st.session_state.matriz_raw.get(celula_ref, "")).strip()
+      val = str(st.session_state[CHAVE_MATRIZ].get(celula_ref, "")).strip()
 
       if not val or val.lower() in ["none", "nan", "null"]:
         linha.append("")
@@ -477,7 +481,9 @@ col_celula, col_fx = st.columns([2, 8])
 with col_celula:
   celula_selecionada = st.selectbox("Célula", opcoes_celulas, index=0)
 
-val_atual = str(st.session_state.matriz_raw.get(celula_selecionada, "")).strip()
+val_atual = str(
+    st.session_state[CHAVE_MATRIZ].get(celula_selecionada, "")
+).strip()
 if val_atual.lower() in ["none", "nan", "null"]:
   val_atual = ""
 
@@ -489,9 +495,12 @@ def atualizar_barra_fx():
     if novo_texto.lower() in ["none", "nan", "null"]:
       novo_texto = ""
 
-    if st.session_state.matriz_raw.get(celula_selecionada, "") != novo_texto:
-      st.session_state.matriz_raw[celula_selecionada] = novo_texto
-      st.session_state.alteracoes_pendentes = True
+    if (
+        st.session_state[CHAVE_MATRIZ].get(celula_selecionada, "")
+        != novo_texto
+    ):
+      st.session_state[CHAVE_MATRIZ][celula_selecionada] = novo_texto
+      st.session_state[CHAVE_ALTERACOES] = True
 
 
 with col_fx:
@@ -538,9 +547,9 @@ for lin_idx, lin in enumerate(range(1, TOTAL_LINHAS + 1)):
 
     # Se o valor digitado na grade for diferente do resultado calculado, atualiza o valor bruto
     if val_final != val_calculado_exibido:
-      st.session_state.matriz_raw[celula_ref] = val_final
+      st.session_state[CHAVE_MATRIZ][celula_ref] = val_final
       houve_alteracao = True
 
 if houve_alteracao:
-  st.session_state.alteracoes_pendentes = True
+  st.session_state[CHAVE_ALTERACOES] = True
   st.rerun()
