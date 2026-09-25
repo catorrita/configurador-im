@@ -15,7 +15,7 @@ st.set_page_config(page_title="Planilha Interativa", layout="wide")
 GITHUB_TOKEN = st.secrets.get("GITHUB_TOKEN", "")
 GITHUB_REPO = st.secrets.get("GITHUB_REPO", "catorrita/configurador-im")
 FILE_PATH = st.secrets.get(
-    "GITHUB_FILE_PATH", "planilha-im/dados/planilha_salva.json"
+    "GITHUB_FILE_PATH", "planilha-im/dados/planilha_salva (1).json"
 )
 
 
