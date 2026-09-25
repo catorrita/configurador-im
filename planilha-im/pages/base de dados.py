@@ -14,8 +14,12 @@ st.set_page_config(
 # ==========================================
 # CONFIGURAÇÃO DO SUPABASE
 # ==========================================
-SUPABASE_URL = st.secrets["connections.supabase"]["url"]
-SUPABASE_KEY = st.secrets["connections.supabase"]["key"]
+SUPABASE_URL = st.secrets.get("SUPABASE_URL") or st.secrets.get("connections", {}).get("supabase", {}).get("url", "")
+SUPABASE_KEY = st.secrets.get("SUPABASE_KEY") or st.secrets.get("connections", {}).get("supabase", {}).get("key", "")
+
+if not SUPABASE_URL or not SUPABASE_KEY:
+    st.error("❌ As credenciais do Supabase não foram encontradas nos Secrets do Streamlit Cloud.")
+    st.stop()
 
 @st.cache_resource
 def init_supabase() -> Client:
@@ -23,10 +27,19 @@ def init_supabase() -> Client:
 
 supabase = init_supabase()
 
-# E-mail do usuário logado
-USER_EMAIL = "felipe.binsfeld@fockind.ind.br"
+# ==========================================
+# CAPTURA AUTOMÁTICA DO E-MAIL DO USUÁRIO
+# ==========================================
+USER_EMAIL = (
+    st.session_state.get("user_email") 
+    or st.session_state.get("email") 
+    or getattr(st, "user", {}).get("email", None)
+)
 
-# Chaves dinâmicas baseadas na sessão
+if not USER_EMAIL:
+    USER_EMAIL = st.secrets.get("DEFAULT_USER_EMAIL", "felipe.binsfeld@fockind.ind.br")
+
+# Chaves dinâmicas baseadas na sessão e no e-mail obtido
 CHAVE_MATRIZ = f"matriz_raw_{USER_EMAIL}"
 CHAVE_ALTERACOES = f"alteracoes_pendentes_{USER_EMAIL}"
 
@@ -35,13 +48,12 @@ CHAVE_ALTERACOES = f"alteracoes_pendentes_{USER_EMAIL}"
 # ==========================================
 def carregar_dados_supabase():
     try:
-        # Puxa os dados do Supabase isolados por usuário com paginação segura para grandes volumes
         response = (
             supabase.table("Base de dados Configurador IM")
             .select("*")
             .eq("MODIF_POR", USER_EMAIL)
             .order("COD_SAP", desc=False)
-            .range(0, 999) # Carrega os primeiros 1000 registros para a grade interativa
+            .range(0, 999)
             .execute()
         )
         dados_tabela = response.data
