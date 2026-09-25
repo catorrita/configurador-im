@@ -18,7 +18,6 @@ FILE_PATH = st.secrets.get(
     "GITHUB_FILE_PATH", "planilha-im/dados/planilha_salva (1).json"
 )
 
-
 @st.cache_resource
 def obter_repositorio_github():
   if GITHUB_TOKEN and GITHUB_REPO:
