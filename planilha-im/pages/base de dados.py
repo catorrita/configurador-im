@@ -38,20 +38,20 @@ USER_EMAIL = (
 # 3. FUNÇÕES DE BANCO DE DADOS
 # ==========================================
 def carregar_dados_do_supabase():
-    """Carrega os dados da tabela do Supabase com tratamento de erros detalhado"""
+    """Carrega os dados da tabela do Supabase"""
     try:
-        # Busca os registros da tabela exatamente como está no seu painel
+        # Tenta buscar os dados da tabela
         response = supabase.table("Base de Dados").select("*").limit(1000).execute()
         dados = response.data
         
         if dados and len(dados) > 0:
             return pd.DataFrame(dados)
         else:
-            st.warning("⚠️ A tabela retornou vazia. Dica: Verifique se o RLS (Row Level Security) está ativo no Supabase bloqueando a leitura.")
+            st.warning("⚠️️ O Supabase retornou 0 registros. Verifique se o RLS (Row Level Security) está desativado na tabela 'Base de Dados' no painel do Supabase.")
             return pd.DataFrame(columns=["COD_SAP", "COD_SGE", "DESC_ITEM", "MODIF_POR"])
             
     except Exception as e:
-        st.error(f"❌ Erro detalhado ao carregar do Supabase: {e}")
+        st.error(f"❌ Erro ao conectar com o Supabase: {e}")
         return pd.DataFrame(columns=["COD_SAP", "COD_SGE", "DESC_ITEM", "MODIF_POR"])
 
 def salvar_alteracoes_no_supabase(df_alterado):
@@ -60,12 +60,10 @@ def salvar_alteracoes_no_supabase(df_alterado):
         with st.spinner("💾 Salvando alterações no Supabase..."):
             registros = df_alterado.to_dict(orient="records")
             
-            # Garante que o e-mail do usuário atualizador seja mantido nas linhas modificadas
             for reg in registros:
                 if not reg.get("MODIF_POR"):
                     reg["MODIF_POR"] = USER_EMAIL
 
-            # O .upsert atualiza se já existir (baseado na chave primária) ou insere se for novo
             supabase.table("Base de Dados").upsert(registros).execute()
             
         st.success("✅ Dados salvos com sucesso no Supabase!")
@@ -82,12 +80,11 @@ if "df_dados" not in st.session_state:
 # 4. INTERFACE DO USUÁRIO (UI)
 # ==========================================
 
-# Barra superior com botões de navegação e ações
 col_voltar, col_status, col_salvar, col_atualizar = st.columns([2, 4, 2, 2])
 
 with col_voltar:
     if st.button("← Ir ao Início", use_container_width=True):
-        st.switch_page("app.py")  # Altere para o nome do arquivo inicial se necessário
+        st.switch_page("app.py")
 
 with col_status:
     st.caption(f"✔️ Conectado ao Supabase | Usuário: {USER_EMAIL}")
@@ -112,7 +109,6 @@ st.divider()
 st.subheader("📋 Base de Dados Geral")
 st.info("💡 Você pode editar os campos diretamente na tabela abaixo e clicar em 'Salvar Alterações' no topo.")
 
-# Exibe a tabela interativa do Streamlit
 if not st.session_state["df_dados"].empty:
     st.session_state["df_editado"] = st.data_editor(
         st.session_state["df_dados"],
