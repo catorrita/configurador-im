@@ -38,21 +38,23 @@ USER_EMAIL = (
 # 3. FUNÇÕES DE BANCO DE DADOS
 # ==========================================
 def carregar_dados_do_supabase():
-    """Carrega os dados da tabela do Supabase"""
+    """Carrega os dados e exibe informações de diagnóstico se vier vazio"""
     try:
-        # Tenta buscar os dados da tabela
+        # Faz a consulta limitada a 1000 registros para teste inicial
         response = supabase.table("Base de Dados").select("*").limit(1000).execute()
         dados = response.data
+        
+        # Mostra na tela a URL conectada (para confirmar se é o mesmo projeto do navegador)
+        st.info(f"🔗 Conectado ao projeto Supabase URL: `{SUPABASE_URL[:35]}...` | Total retornado pela API: {len(dados) if dados else 0} registros.")
         
         if dados and len(dados) > 0:
             return pd.DataFrame(dados)
         else:
-            st.warning("⚠️️ O Supabase retornou 0 registros. Verifique se o RLS (Row Level Security) está desativado na tabela 'Base de Dados' no painel do Supabase.")
-            return pd.DataFrame(columns=["COD_SAP", "COD_SGE", "DESC_ITEM", "MODIF_POR"])
+            return pd.DataFrame()
             
     except Exception as e:
-        st.error(f"❌ Erro ao conectar com o Supabase: {e}")
-        return pd.DataFrame(columns=["COD_SAP", "COD_SGE", "DESC_ITEM", "MODIF_POR"])
+        st.error(f"❌ Erro crítico ao buscar no Supabase: {e}")
+        return pd.DataFrame()
 
 def salvar_alteracoes_no_supabase(df_alterado):
     """Salva/Atualiza as alterações feitas na tabela de volta para o Supabase"""
@@ -87,7 +89,7 @@ with col_voltar:
         st.switch_page("app.py")
 
 with col_status:
-    st.caption(f"✔️ Conectado ao Supabase | Usuário: {USER_EMAIL}")
+    st.caption(f"✔️ Usuário: {USER_EMAIL}")
 
 with col_salvar:
     if st.button("💾 Salvar Alterações", use_container_width=True, type="primary"):
@@ -107,9 +109,9 @@ st.divider()
 # 5. GRADE INTERATIVA PARA EDIÇÃO
 # ==========================================
 st.subheader("📋 Base de Dados Geral")
-st.info("💡 Você pode editar os campos diretamente na tabela abaixo e clicar em 'Salvar Alterações' no topo.")
 
 if not st.session_state["df_dados"].empty:
+    st.info("💡 Você pode editar os campos diretamente na tabela abaixo e clicar em 'Salvar Alterações' no topo.")
     st.session_state["df_editado"] = st.data_editor(
         st.session_state["df_dados"],
         use_container_width=True,
@@ -118,4 +120,4 @@ if not st.session_state["df_dados"].empty:
         num_rows="dynamic"
     )
 else:
-    st.warning("Nenhum dado encontrado para exibir na tabela.")
+    st.warning("⚠️ Nenhum registro foi retornado pela API do Supabase para esta tabela.")
