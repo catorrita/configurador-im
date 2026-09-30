@@ -49,7 +49,7 @@ CHAVE_ALTERACOES = f"alteracoes_pendentes_{USER_EMAIL}"
 def carregar_dados_supabase():
     try:
         response = (
-            supabase.table("Base de dados Configurador IM")
+           supabase.table("Base de Dados")
             .select("*")
             .eq("MODIF_POR", USER_EMAIL)
             .order("COD_SAP", desc=False)
@@ -97,7 +97,7 @@ def salvar_dados_supabase():
                         "COD_SGE": cod_sge,
                         "DESC_ITEM": desc_item
                     }
-                    supabase.table("Base de dados Configurador IM").upsert(registro, on_conflict="MODIF_POR,COD_SAP").execute()
+                    supabase.table("Base de dados").upsert(registro, on_conflict="MODIF_POR,COD_SAP").execute()
 
         st.session_state[CHAVE_ALTERACOES] = False
         st.success("✅ Dados salvos com sucesso no Supabase!")
