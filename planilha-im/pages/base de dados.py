@@ -37,28 +37,16 @@ USER_EMAIL = (
 # 3. FUNÇÕES DE BANCO DE DADOS
 # ==========================================
 def carregar_dados_do_supabase():
-    """Carrega os dados testando variações do nome da tabela"""
+    """Carrega os dados da tabela correta do Supabase"""
     try:
-        # Tenta buscar na tabela com o nome exato
+        # Puxa os dados da tabela exata do painel
         response = supabase.table("Base de Dados").select("*").limit(1000).execute()
         dados = response.data
         
         if dados and len(dados) > 0:
-            st.success(f"Sucesso! Encontrados {len(dados)} registros.")
             return pd.DataFrame(dados)
-            
-        # Se veio vazio, tenta variações comuns caso o nome tenha sido criado diferente internamente
-        for nome_alternativo in ["base_de_dados", "BaseDeDados", "base de dados"]:
-            try:
-                res_alt = supabase.table(nome_alternativo).select("*").limit(1000).execute()
-                if res_alt.data and len(res_alt.data) > 0:
-                    st.success(f"Encontrado usando o nome alternativo: '{nome_alternativo}'!")
-                    return pd.DataFrame(res_alt.data)
-            except:
-                continue
-                
-        st.warning("⚠️ A API conectou, mas todas as tentativas de leitura retornaram 0 linhas. Verifique se o RLS (Row Level Security) está desativado na tabela no painel do Supabase.")
-        return pd.DataFrame()
+        else:
+            return pd.DataFrame()
             
     except Exception as e:
         st.error(f"❌ Erro ao buscar no Supabase: {e}")
@@ -71,7 +59,10 @@ def salvar_alteracoes_no_supabase(df_alterado):
             for reg in registros:
                 if not reg.get("MODIF_POR"):
                     reg["MODIF_POR"] = USER_EMAIL
+            
+            # Upsert atualiza se já existir (baseado na chave primária) ou insere se for novo
             supabase.table("Base de Dados").upsert(registros).execute()
+            
         st.success("✅ Dados salvos com sucesso no Supabase!")
         return True
     except Exception as e:
@@ -123,4 +114,4 @@ if not st.session_state["df_dados"].empty:
         num_rows="dynamic"
     )
 else:
-    st.warning("⚠️ Nenhum registro foi retornado pela API do Supabase.")
+    st.warning("⚠️ Nenhum registro encontrado. Verifique se os Secrets do Streamlit Cloud estão configurados com as chaves corretas do projeto do Supabase.")
