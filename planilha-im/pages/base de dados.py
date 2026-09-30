@@ -26,7 +26,6 @@ def init_supabase() -> Client:
 
 supabase = init_supabase()
 
-# Captura do e-mail do usuário
 USER_EMAIL = (
     st.session_state.get("user_email") 
     or st.session_state.get("email") 
@@ -38,43 +37,47 @@ USER_EMAIL = (
 # 3. FUNÇÕES DE BANCO DE DADOS
 # ==========================================
 def carregar_dados_do_supabase():
-    """Carrega os dados e exibe informações de diagnóstico se vier vazio"""
+    """Carrega os dados testando variações do nome da tabela"""
     try:
-        # Faz a consulta limitada a 1000 registros para teste inicial
+        # Tenta buscar na tabela com o nome exato
         response = supabase.table("Base de Dados").select("*").limit(1000).execute()
         dados = response.data
         
-        # Mostra na tela a URL conectada (para confirmar se é o mesmo projeto do navegador)
-        st.info(f"🔗 Conectado ao projeto Supabase URL: `{SUPABASE_URL[:35]}...` | Total retornado pela API: {len(dados) if dados else 0} registros.")
-        
         if dados and len(dados) > 0:
+            st.success(f"Sucesso! Encontrados {len(dados)} registros.")
             return pd.DataFrame(dados)
-        else:
-            return pd.DataFrame()
+            
+        # Se veio vazio, tenta variações comuns caso o nome tenha sido criado diferente internamente
+        for nome_alternativo in ["base_de_dados", "BaseDeDados", "base de dados"]:
+            try:
+                res_alt = supabase.table(nome_alternativo).select("*").limit(1000).execute()
+                if res_alt.data and len(res_alt.data) > 0:
+                    st.success(f"Encontrado usando o nome alternativo: '{nome_alternativo}'!")
+                    return pd.DataFrame(res_alt.data)
+            except:
+                continue
+                
+        st.warning("⚠️ A API conectou, mas todas as tentativas de leitura retornaram 0 linhas. Verifique se o RLS (Row Level Security) está desativado na tabela no painel do Supabase.")
+        return pd.DataFrame()
             
     except Exception as e:
-        st.error(f"❌ Erro crítico ao buscar no Supabase: {e}")
+        st.error(f"❌ Erro ao buscar no Supabase: {e}")
         return pd.DataFrame()
 
 def salvar_alteracoes_no_supabase(df_alterado):
-    """Salva/Atualiza as alterações feitas na tabela de volta para o Supabase"""
     try:
         with st.spinner("💾 Salvando alterações no Supabase..."):
             registros = df_alterado.to_dict(orient="records")
-            
             for reg in registros:
                 if not reg.get("MODIF_POR"):
                     reg["MODIF_POR"] = USER_EMAIL
-
             supabase.table("Base de Dados").upsert(registros).execute()
-            
         st.success("✅ Dados salvos com sucesso no Supabase!")
         return True
     except Exception as e:
         st.error(f"❌ Erro ao salvar no Supabase: {e}")
         return False
 
-# Inicializa os dados na sessão se não existirem
 if "df_dados" not in st.session_state:
     st.session_state["df_dados"] = carregar_dados_do_supabase()
 
@@ -120,4 +123,4 @@ if not st.session_state["df_dados"].empty:
         num_rows="dynamic"
     )
 else:
-    st.warning("⚠️ Nenhum registro foi retornado pela API do Supabase para esta tabela.")
+    st.warning("⚠️ Nenhum registro foi retornado pela API do Supabase.")
