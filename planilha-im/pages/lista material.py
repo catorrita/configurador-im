@@ -120,8 +120,8 @@ if "alteracoes_pendentes" not in st.session_state:
 col_voltar, col_status, col_salvar, col_exportar = st.columns([2, 3, 2, 2])
 
 with col_voltar:
-  if st.button("← Ir ao Início", use_container_width=True):
-    st.switch_page("app.py")
+  if st.button("Voltar", use_container_width=True):
+    st.switch_page("pages/menu.py")
 
 with col_status:
   if st.session_state.alteracoes_pendentes:
