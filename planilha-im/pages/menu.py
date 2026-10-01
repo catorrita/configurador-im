@@ -129,22 +129,20 @@ st.markdown('<div class="yellow-header">CLIQUE NO QUADRADO ABAIXO CASO A OBRA TE
 # Layout Principal: [Atividades] | [Botões] | [Imagem]
 col_atividades, col_botoes, col_imagem = st.columns([2.5, 1.1, 3.5])
 
-# --- COLUNA 1: Lista de Atividades ---
-with col_atividades:
-  atividades = [
-      "351 / ILUMINAÇÃO EMERGÊNCIA",
-      "352 / ALARME INCENDIO",
-      "355 / REDE DE HIDRANTES",
-      "357 / CASA DE BOMBAS",
-      "358 / EXTINTORES",
-      "526 / REDE DE AR COMPRIMIDO",
-      "532 - REDE DE AGUA INDUSTRIAL",
-      "351 / SINALIZAÇÃO DE EMERGENCIA",
-      "534 / INSTALAÇÃO REDE DE GÁS GLP",
-  ]
+# Lista de Atividades
+atividades = [
+    "351 / ILUMINAÇÃO EMERGÊNCIA",
+    "352 / ALARME INCENDIO",
+    "355 / REDE DE HIDRANTES",
+    "357 / CASA DE BOMBAS",
+    "358 / EXTINTORES",
+    "526 / REDE DE AR COMPRIMIDO",
+    "532 - REDE DE AGUA INDUSTRIAL",
+    "351 / SINALIZAÇÃO DE EMERGENCIA",
+    "534 / INSTALAÇÃO REDE DE GÁS GLP",
+]
 
-  # Mapeamento correspondente de cada índice para a sua respetiva página
-
+# Mapeamento correspondente de cada índice para a sua respetiva página
 paginas_destino = {
     0: "pages/iluminacao.py",
     1: "pages/alarme_incendio.py",
@@ -157,41 +155,37 @@ paginas_destino = {
     8: "pages/gas_glp.py",
 }
 
-  for idx, label in enumerate(atividades):
-    # [Ícone (✖/✔)] | [Quadrado Verde Vazio] | [Texto da Atividade]
-    c_icon, c_box, c_text = st.columns([0.25, 0.4, 3.3])
+# --- COLUNA 1: Lista de Atividades ---
+with col_atividades:
+    for idx, label in enumerate(atividades):
+        # [Ícone (✖/✔)] | [Quadrado Verde Vazio] | [Texto da Atividade]
+        c_icon, c_box, c_text = st.columns([0.25, 0.4, 3.3])
 
-    state_key = f"active_{idx}"
-    if state_key not in st.session_state:
-      st.session_state[state_key] = False
+        state_key = f"active_{idx}"
+        if state_key not in st.session_state:
+            st.session_state[state_key] = False
 
-    # Coluna do Ícone (à esquerda do quadrado verde)
-    with c_icon:
-      if st.session_state[state_key]:
-        st.markdown(
-            '<div class="status-icon-green">✔</div>', unsafe_allow_html=True
-        )
-      else:
-        st.markdown(
-            '<div class="status-icon-red">✖</div>', unsafe_allow_html=True
-        )
+        # Coluna do Ícone (à esquerda do quadrado verde)
+        with c_icon:
+            if st.session_state[state_key]:
+                st.markdown('<div class="status-icon-green">✔</div>', unsafe_allow_html=True)
+            else:
+                st.markdown('<div class="status-icon-red">✖</div>', unsafe_allow_html=True)
 
-    # Coluna do Quadrado Verde (Vazio por dentro)
-    with c_box:
-      if st.button(" ", key=f"btn_toggle_{idx}"):
-        st.session_state[state_key] = not st.session_state[state_key]
+        # Coluna do Quadrado Verde (Vazio por dentro)
+        with c_box:
+            if st.button(" ", key=f"btn_toggle_{idx}"):
+                st.session_state[state_key] = not st.session_state[state_key]
 
-        # Se o botão foi ativado, redireciona para a página correspondente da lista
-        if st.session_state[state_key] and idx in paginas_destino:
-          st.switch_page(paginas_destino[idx])
-        else:
-          st.rerun()
+                # Se o botão foi ativado, redireciona para a página correspondente da lista
+                if st.session_state[state_key] and idx in paginas_destino:
+                    st.switch_page(paginas_destino[idx])
+                else:
+                    st.rerun()
 
-    # Coluna do Texto
-    with c_text:
-      st.markdown(
-          f'<div class="activity-label">{label}</div>', unsafe_allow_html=True
-      )
+        # Coluna do Texto
+        with c_text:
+            st.markdown(f'<div class="activity-label">{label}</div>', unsafe_allow_html=True)
 
 
 # --- COLUNA 2: Botões de Navegação ---
@@ -209,8 +203,13 @@ with col_botoes:
 
 # --- COLUNA 3: Imagem ---
 with col_imagem:
-    caminho_imagem = r"planilha-im/pages/imagem_menu.png"
+    caminho_imagem = "pages/imagem_menu.png"
     if os.path.exists(caminho_imagem):
         st.image(caminho_imagem, use_container_width=True)
     else:
-        st.warning(f"Imagem não encontrada em:\n{caminho_imagem}")
+        # Tenta verificar se está na raiz ou caminho relativo ajustado
+        caminho_alternativo = r"planilha-im/pages/imagem_menu.png"
+        if os.path.exists(caminho_alternativo):
+            st.image(caminho_alternativo, use_container_width=True)
+        else:
+            st.warning(f"Imagem não encontrada em:\n{caminho_imagem}")
