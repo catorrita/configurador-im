@@ -14,8 +14,17 @@ if "autenticado" not in st.session_state:
     st.session_state["autenticado"] = False
     st.session_state["usuario_email"] = ""
 
-# --- BLOQUEIO DE SEGURANÇA GERAL ---
+# --- BLOQUEIO DE SEGURANÇA E OCULTAÇÃO DO MENU SE NÃO LOGADO ---
 if not st.session_state["autenticado"]:
+    # Oculta a navegação automática do menu lateral (páginas do Streamlit)
+    st.markdown("""
+        <style>
+            [data-testid="stSidebarNav"] {
+                display: none;
+            }
+        </style>
+    """, unsafe_allow_html=True)
+    
     st.markdown("<h1 style='text-align: center;'>CONFIGURADOR INSTALAÇÕES MECÂNICAS FOCKINK</h1>", unsafe_allow_html=True)
     st.write("")
     
@@ -34,13 +43,10 @@ if not st.session_state["autenticado"]:
                     st.warning("Por favor, preencha o e-mail e a senha.")
                 else:
                     try:
-                        # Limpa espaços em branco que possam vir digitados
                         email_limpo = email_input.strip().lower()
-                        
                         response = supabase.table("LOGIN").select("*").execute()
                         todos_usuarios = response.data
                         
-                        # Busca o usuário ignorando maiúsculas/minúsculas e espaços
                         usuario_encontrado = None
                         for u in todos_usuarios:
                             if u["EMAIL"].strip().lower() == email_limpo:
@@ -60,7 +66,6 @@ if not st.session_state["autenticado"]:
                     except Exception as e:
                         st.error(f"Erro ao conectar com o banco de dados: {e}")
                         
-    # Para a execução aqui se não estiver logado (bloqueia o resto da tela/menu)
     st.stop()
 
 # --- ÁREA RESTRITA (SÓ APARECE APÓS O LOGIN) ---
