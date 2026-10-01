@@ -412,7 +412,7 @@ if st.button("Voltar", type="primary"):
 # Botões de Ação Supabase e Excel no topo
 col_botoes_topo = st.columns([2, 2, 6])
 with col_botoes_topo[0]:
-    if st.button("💾 Salvar no Supabase", type="primary", use_container_width=True):
+    if st.button("💾 Salvar", type="primary", use_container_width=True):
         salvar_dados_supabase()
 with col_botoes_topo[1]:
     excel_file = gerar_excel()
