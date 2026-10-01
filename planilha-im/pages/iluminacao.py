@@ -29,11 +29,6 @@ def init_supabase():
 supabase = init_supabase()
 
 
-# Controle de Navegação por Menu
-if "pagina_atual" not in st.session_state:
-    st.session_state.pagina_atual = "planilha"  # "menu" ou "planilha"
-
-
 # 1. Carregamento robusto do Supabase
 @st.cache_data(ttl=1)
 def carregar_dados_supabase():
@@ -407,111 +402,90 @@ def gerar_excel():
 
 
 # ==========================================
-# TELAS DO SISTEMA (MENU x PLANILHA)
+# INTERFACE PRINCIPAL
 # ==========================================
-if st.session_state.pagina_atual == "menu":
-    st.title("MENU PRINCIPAL - ILUMINAÇÃO DE EMERGÊNCIA")
-    st.write("Escolha uma opção abaixo:")
-    
-    col_m1, col_m2 = st.columns(2)
-    with col_m1:
-        if st.button("📊 Abrir Planilha de Dados", use_container_width=True):
-            st.session_state.pagina_atual = "planilha"
-            st.rerun()
-    with col_m2:
-        if st.button("📥 Sincronizar / Atualizar do Supabase", use_container_width=True):
-            st.cache_data.clear()
-            st.session_state.matriz_raw, st.session_state.COLUNAS_EXCEL = carregar_dados_supabase()
-            st.success("Dados atualizados com sucesso!")
-            st.rerun()
 
-else:
-    # BARRA SUPERIOR DE NAVEGAÇÃO E AÇÕES
-    col_voltar, col_titulo, col_botoes = st.columns([1, 4, 3])
-    
-    with col_voltar:
-        if st.button("⬅️ Voltar ao Menu", use_container_width=True):
-            st.session_state.pagina_atual = "menu"
-            st.rerun()
+# Botão de Voltar para a aba menu padrão do Streamlit
+if st.button("Voltar", type="primary"):
+    st.switch_page("pages/menu.py")
 
-    with col_botoes:
-        c_salvar, c_excel = st.columns(2)
-        with c_salvar:
-            if st.button("💾 Salvar Supabase", type="primary", use_container_width=True):
-                if salvar_dados_supabase():
-                    st.rerun()
-        with c_excel:
-            excel_file = gerar_excel()
-            st.download_button(
-                label="📥 Exportar Excel",
-                data=excel_file,
-                file_name="iluminacao_emergencia.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True,
-            )
-
-    st.title("ILUMINAÇÃO DE EMERGÊNCIA")
-
-    max_linhas_ativas = len(gerar_dataframe_calculado())
-    opcoes_celulas = [f"{col}{lin}" for lin in range(1, max_linhas_ativas + 1) for col in COLUNAS_EXCEL]
-
-    col_celula, col_fx = st.columns([2, 8])
-
-    with col_celula:
-        celula_selecionada = st.selectbox("Célula", opcoes_celulas, index=0)
-
-    val_atual = str(st.session_state.matriz_raw.get(celula_selecionada, "")).strip()
-    if val_atual.lower() in ["none", "nan", "null"]:
-        val_atual = ""
-
-
-    def atualizar_barra_fx():
-        chave_input = f"input_fx_{celula_selecionada}"
-        if chave_input in st.session_state:
-            novo_texto = st.session_state[chave_input].strip()
-            if novo_texto.lower() in ["none", "nan", "null"]:
-                novo_texto = ""
-            if st.session_state.matriz_raw.get(celula_selecionada, "") != novo_texto:
-                st.session_state.matriz_raw[celula_selecionada] = novo_texto
-                st.session_state.alteracoes_pendentes = True
-
-
-    with col_fx:
-        st.text_input(
-            "Barra de Fórmulas (fx)",
-            value=val_atual,
-            key=f"input_fx_{celula_selecionada}",
-            on_change=atualizar_barra_fx,
-        )
-
-    st.divider()
-
-    # Grade Interativa (st.data_editor)
-    df_exibicao = gerar_dataframe_calculado()
-    df_editado = st.data_editor(
-        df_exibicao, use_container_width=True, height=520, key="grid_supabase"
+# Botões de Ação Supabase e Excel no topo
+col_botoes_topo = st.columns([2, 2, 6])
+with col_botoes_topo[0]:
+    if st.button("💾 Salvar no Supabase", type="primary", use_container_width=True):
+        salvar_dados_supabase()
+with col_botoes_topo[1]:
+    excel_file = gerar_excel()
+    st.download_button(
+        label="📥 Exportar Excel",
+        data=excel_file,
+        file_name="iluminacao_emergencia.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True,
     )
 
-    # Sincronização imediata das edições feitas diretamente na tabela
-    houve_alteracao = False
-    for lin_idx, lin in enumerate(range(1, len(df_exibicao) + 1)):
-        for col_idx, col in enumerate(COLUNAS_EXCEL):
-            celula_ref = f"{col}{lin}"
-            val_digitado = df_editado.iat[lin_idx, col_idx]
-            val_final = (
-                ""
-                if pd.isna(val_digitado) or val_digitado is None or str(val_digitado).strip().lower() in ["none", "nan", "null"]
-                else str(val_digitado).strip()
-            )
-            
-            val_atual_raw = str(st.session_state.matriz_raw.get(celula_ref, "")).strip()
-            val_calculado_exibido = str(df_exibicao.iat[lin_idx, col_idx]).strip()
+st.title("ILUMINAÇÃO DE EMERGÊNCIA")
 
-            if val_final != val_calculado_exibido:
-                if val_atual_raw.startswith("=") and val_final == val_calculado_exibido:
-                    continue
-                st.session_state.matriz_raw[celula_ref] = val_final
-                houve_alteracao = True
+max_linhas_ativas = len(gerar_dataframe_calculado())
+opcoes_celulas = [f"{col}{lin}" for lin in range(1, max_linhas_ativas + 1) for col in COLUNAS_EXCEL]
 
-    if houve_alteracao:
-        st.session_state.alteracoes_pendentes = True
+col_celula, col_fx = st.columns([2, 8])
+
+with col_celula:
+    celula_selecionada = st.selectbox("Célula", opcoes_celulas, index=0)
+
+val_atual = str(st.session_state.matriz_raw.get(celula_selecionada, "")).strip()
+if val_atual.lower() in ["none", "nan", "null"]:
+    val_atual = ""
+
+
+def atualizar_barra_fx():
+    chave_input = f"input_fx_{celula_selecionada}"
+    if chave_input in st.session_state:
+        novo_texto = st.session_state[chave_input].strip()
+        if novo_texto.lower() in ["none", "nan", "null"]:
+            novo_texto = ""
+        if st.session_state.matriz_raw.get(celula_selecionada, "") != novo_texto:
+            st.session_state.matriz_raw[celula_selecionada] = novo_texto
+            st.session_state.alteracoes_pendentes = True
+
+
+with col_fx:
+    st.text_input(
+        "Barra de Fórmulas (fx)",
+        value=val_atual,
+        key=f"input_fx_{celula_selecionada}",
+        on_change=atualizar_barra_fx,
+    )
+
+st.divider()
+
+# Grade Interativa (st.data_editor)
+df_exibicao = gerar_dataframe_calculado()
+df_editado = st.data_editor(
+    df_exibicao, use_container_width=True, height=520, key="grid_supabase"
+)
+
+# Sincronização imediata das edições feitas diretamente na tabela
+houve_alteracao = False
+for lin_idx, lin in enumerate(range(1, len(df_exibicao) + 1)):
+    for col_idx, col in enumerate(COLUNAS_EXCEL):
+        celula_ref = f"{col}{lin}"
+        val_digitado = df_editado.iat[lin_idx, col_idx]
+        val_final = (
+            ""
+            if pd.isna(val_digitado) or val_digitado is None or str(val_digitado).strip().lower() in ["none", "nan", "null"]
+            else str(val_digitado).strip()
+        )
+        
+        val_atual_raw = str(st.session_state.matriz_raw.get(celula_ref, "")).strip()
+        val_calculado_exibido = str(df_exibicao.iat[lin_idx, col_idx]).strip()
+
+        if val_final != val_calculado_exibido:
+            if val_atual_raw.startswith("=") and val_final == val_calculado_exibido:
+                continue
+            st.session_state.matriz_raw[celula_ref] = val_final
+            houve_alteracao = True
+
+if houve_alteracao:
+    st.session_state.alteracoes_pendentes = True
