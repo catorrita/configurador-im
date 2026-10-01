@@ -43,17 +43,13 @@ def carregar_dados_supabase():
             return {}, ["A", "B", "C"]
 
         primeiro_registro = registros[0]
-        # Identifica as colunas ignorando LINHA e metadados
+        # Identifica as colunas disponíveis na tabela (ex: A, B, C, LINHA)
         colunas_disponiveis = [
             c.upper()
             for c in primeiro_registro.keys()
             if c.upper() != "LINHA" and not c.startswith("_")
         ]
         
-        # Se a primeira coluna veio como 'UM', normalizamos para 'A' para manter compatibilidade com fórmulas
-        if "UM" in colunas_disponiveis and "A" not in colunas_disponiveis:
-            colunas_disponiveis = ["A" if c == "UM" else c for c in colunas_disponiveis]
-
         colunas_disponiveis = sorted(list(set(colunas_disponiveis)))
         if not colunas_disponiveis:
             colunas_disponiveis = ["A", "B", "C"]
@@ -67,9 +63,7 @@ def carregar_dados_supabase():
                 continue
 
             for col in colunas_disponiveis:
-                # Busca a chave correspondente (tentando a letra original ou 'UM' se aplicável)
-                chave_busca = "UM" if col == "A" and "UM" in [k.upper() for k in reg.keys()] else col
-                val = reg.get(chave_busca, reg.get(col.lower(), ""))
+                val = reg.get(col, reg.get(col.lower(), ""))
                 if val is None or str(val).strip().lower() in ["none", "nan", "null"]:
                     val = ""
                 mapa_dados[f"{col}{lin_num}"] = str(val)
@@ -91,7 +85,7 @@ if "alteracoes_pendentes" not in st.session_state:
 COLUNAS_EXCEL = st.session_state.COLUNAS_EXCEL
 
 
-# 2. Função de Salvamento Inteligente
+# 2. Função de Salvamento Inteligente (Envia diretamente A, B, C...)
 def salvar_dados_supabase():
     if not supabase:
         st.error("❌ Erro: Supabase não configurado!")
@@ -108,9 +102,9 @@ def salvar_dados_supabase():
                     if lin_int not in linhas_dict:
                         linhas_dict[lin_int] = {"LINHA": lin_int}
                     
-                    # Se a coluna A mapeia para 'UM' no seu banco atual, ajustamos o envio
-                    col_envio = "UM" if col == "A" else col
-                    linhas_dict[lin_int][col_envio] = val if val != "" else None
+                    # Salva usando exatamente o nome da coluna correspondente (A, B, C...)
+                    if col in COLUNAS_EXCEL:
+                        linhas_dict[lin_int][col] = val if val != "" else None
 
             for lin_int, dados_linha in linhas_dict.items():
                 supabase.table(NOME_TABELA).upsert(
@@ -141,7 +135,7 @@ with col_voltar:
 
 with col_status:
     if st.session_state.alteracoes_pendentes:
-        st.warning("⚠️️ Alterações não salvas!")
+        st.warning("⚠ Alterações não salvas!")
     else:
         st.caption("✔️ Sincronizado.")
 
@@ -192,7 +186,6 @@ def avaliar_formula(formula_str, mapa_dados, historico_visitados=None):
         expressao = formula_str[1:].strip()
         expressao_upper = expressao.upper()
 
-        # Suporte a SOMA básica ou intervalo (ex: SOMA(A5:B5) ou SOMA(A5))
         match_soma = re.match(r"^SOMA\((.+)\)$", expressao_upper)
         if match_soma:
             arg = match_soma.group(1)
@@ -210,7 +203,6 @@ def avaliar_formula(formula_str, mapa_dados, historico_visitados=None):
                 total = obter_valor_numerico(arg, mapa_dados, historico_visitados.copy())
             return int(total) if total.is_integer() else round(total, 4)
 
-        # Avaliação Matemática Direta (ex: =a5+b5)
         refs = re.findall(r"\b[A-Z]+\d+\b", expressao_upper)
         for ref in refs:
             val = obter_valor_numerico(ref, mapa_dados, historico_visitados.copy())
