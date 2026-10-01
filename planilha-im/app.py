@@ -1,5 +1,4 @@
 import streamlit as st
-import pandas as pd
 from supabase import create_client
 
 st.set_page_config(page_title="Configurador Instalações Mecânicas Fockink", layout="wide")
@@ -43,6 +42,7 @@ if not st.session_state["autenticado"]:
                 else:
                     try:
                         email_limpo = email_input.strip().lower()
+                        # Consulta na tabela de LOGIN do Supabase
                         response = supabase.table("LOGIN").select("*").execute()
                         todos_usuarios = response.data
                         
@@ -59,7 +59,9 @@ if not st.session_state["autenticado"]:
                                 st.session_state["autenticado"] = True
                                 st.session_state["usuario_email"] = email_limpo
                                 st.success("Login realizado com sucesso!")
-                                st.rerun()
+                                
+                                # Redireciona imediatamente para a tela de menu
+                                st.switch_page("pages/menu.py")
                             else:
                                 st.error("Senha incorreta.")
                     except Exception as e:
@@ -67,39 +69,5 @@ if not st.session_state["autenticado"]:
                         
     st.stop()
 
-# --- ÁREA RESTRITA (SÓ APARECE APÓS O LOGIN) ---
-st.sidebar.title("Menu do Sistema")
-st.sidebar.write(f"Logado como: **{st.session_state['usuario_email']}**")
-
-if st.sidebar.button("🚪 Sair / Logout"):
-    st.session_state["autenticado"] = False
-    st.session_state["usuario_email"] = ""
-    st.rerun()
-    
-st.sidebar.markdown("---")
-
-st.title("📋 Base de Dados Geral")
-
-try:
-    response = supabase.table("Base de Dados").select("*").execute()
-    dados = response.data
-    
-    if dados and len(dados) > 0:
-        df = pd.DataFrame(dados)
-        
-        colunas_desejadas = ["COD_SAI", "COD_SGE", "COD_SAP", "DESC_ITEM", "MODIF_POR"]
-        colunas_existentes = [c for c in colunas_desejadas if c in df.columns]
-        df = df.loc[:, colunas_existentes]
-        
-        df_editado = st.data_editor(df, use_container_width=True, height=500, key="editor_simples")
-        
-        if st.button("💾 Salvar Alterações", type="primary"):
-            registros = df_editado.to_dict(orient="records")
-            supabase.table("Base de Dados").upsert(registros, on_conflict="COD_SGE").execute()
-            st.success("Alterações salvas com sucesso!")
-            st.rerun()
-    else:
-        st.warning("A tabela está vazia.")
-
-except Exception as e:
-    st.error(f"Erro ao carregar dados: {e}")
+# Se por acaso já estiver autenticado e abrir o app.py, vai direto para o menu também
+st.switch_page("pages/menu.py")
