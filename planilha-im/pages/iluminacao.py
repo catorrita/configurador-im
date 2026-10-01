@@ -13,9 +13,7 @@ st.set_page_config(page_title="Iluminação de Emergência", layout="wide")
 # ==========================================
 SUPABASE_URL = st.secrets.get("SUPABASE_URL", "")
 SUPABASE_KEY = st.secrets.get("SUPABASE_KEY", "")
-NOME_TABELA = (
-    "ILUMINACAO_EMERGENCIA"  # Nome exato indicado pelo erro do Supabase
-)
+NOME_TABELA = "ILUMINACAO_EMERGENCIA"
 
 
 @st.cache_resource
@@ -42,7 +40,6 @@ def carregar_dados_supabase():
         if not registros:
             return {}, []
 
-        # Identificar colunas dinamicamente a partir das chaves do dicionário (exceto 'LINHA')
         primeiro_registro = registros[0]
         colunas_disponiveis = [
             c
@@ -206,12 +203,13 @@ def avaliar_formula(formula_str, mapa_dados, historico_visitados=None):
                 ini, fim = arg.split(":")
                 c_ini, l_ini = parse_celula(ini)
                 c_fim, l_fim = parse_celula(fim)
-                for c in range(min(c_ini, c_fim), max(c_ini, c_fim) + 1):
-                    for l in range(min(l_ini, l_fim), max(l_ini, l_fim) + 1):
-                        ref = f"{COLUNAS_EXCEL[c]}{l}"
-                        total += obter_valor_numerico(
-                            ref, mapa_dados, historico_visitados.copy()
-                        )
+                if c_ini is not None and c_fim is not None and l_ini is not None and l_fim is not None:
+                    for c in range(min(c_ini, c_fim), max(c_ini, c_fim) + 1):
+                        for l in range(min(l_ini, l_fim), max(l_ini, l_fim) + 1):
+                            ref = f"{COLUNAS_EXCEL[c]}{l}"
+                            total += obter_valor_numerico(
+                                ref, mapa_dados, historico_visitados.copy()
+                            )
             else:
                 total = obter_valor_numerico(
                     arg, mapa_dados, historico_visitados.copy()
@@ -234,37 +232,38 @@ def avaliar_formula(formula_str, mapa_dados, historico_visitados=None):
                 )
                 c_ini_soma, l_ini_soma = parse_celula(interv_soma_str.split(":")[0])
                 total = 0.0
-                for c in range(
-                    min(c_ini_crit, c_fim_crit), max(c_ini_crit, c_fim_crit) + 1
-                ):
-                    for l in range(
-                        min(l_ini_crit, l_fim_crit), max(l_ini_crit, l_fim_crit) + 1
+                if c_ini_crit is not None and c_fim_crit is not None and l_ini_crit is not None and l_fim_crit is not None:
+                    for c in range(
+                        min(c_ini_crit, c_fim_crit), max(c_ini_crit, c_fim_crit) + 1
                     ):
-                        v_crit = str(
-                            obter_valor_celula(
-                                f"{COLUNAS_EXCEL[c]}{l}",
-                                mapa_dados,
-                                historico_visitados.copy(),
-                            )
-                        ).strip()
-                        criterio_val = (
-                            str(
+                        for l in range(
+                            min(l_ini_crit, l_fim_crit), max(l_ini_crit, l_fim_crit) + 1
+                        ):
+                            v_crit = str(
                                 obter_valor_celula(
-                                    criterio_raw, mapa_dados, historico_visitados.copy()
-                                )
-                            ).strip()
-                            if re.match(r"^[A-Z]+\d+$", criterio_raw)
-                            else criterio_raw
-                        )
-                        if v_crit.upper() == criterio_val.upper():
-                            target_c = c_ini_soma + (c - min(c_ini_crit, c_fim_crit))
-                            target_l = l_ini_soma + (l - min(l_ini_crit, l_fim_crit))
-                            if 0 <= target_c < len(COLUNAS_EXCEL):
-                                total += obter_valor_numerico(
-                                    f"{COLUNAS_EXCEL[target_c]}{target_l}",
+                                    f"{COLUNAS_EXCEL[c]}{l}",
                                     mapa_dados,
                                     historico_visitados.copy(),
                                 )
+                            ).strip()
+                            criterio_val = (
+                                str(
+                                    obter_valor_celula(
+                                        criterio_raw, mapa_dados, historico_visitados.copy()
+                                    )
+                                ).strip()
+                                if re.match(r"^[A-Z]+\d+$", criterio_raw)
+                                else criterio_raw
+                            )
+                            if v_crit.upper() == criterio_val.upper():
+                                target_c = c_ini_soma + (c - min(c_ini_crit, c_fim_crit))
+                                target_l = l_ini_soma + (l - min(l_ini_crit, l_fim_crit))
+                                if 0 <= target_c < len(COLUNAS_EXCEL):
+                                    total += obter_valor_numerico(
+                                        f"{COLUNAS_EXCEL[target_c]}{target_l}",
+                                        mapa_dados,
+                                        historico_visitados.copy(),
+                                    )
                 return int(total) if total.is_integer() else round(total, 4)
 
         # --- CONT.SE ---
@@ -279,26 +278,27 @@ def avaliar_formula(formula_str, mapa_dados, historico_visitados=None):
                     interv_str.split(":")[-1] if ":" in interv_str else interv_str
                 )
                 count = 0
-                for c in range(min(c_ini, c_fim), max(c_ini, c_fim) + 1):
-                    for l in range(min(l_ini, l_fim), max(l_ini, l_fim) + 1):
-                        v_crit = str(
-                            obter_valor_celula(
-                                f"{COLUNAS_EXCEL[c]}{l}",
-                                mapa_dados,
-                                historico_visitados.copy(),
-                            )
-                        ).strip()
-                        criterio_val = (
-                            str(
+                if c_ini is not None and c_fim is not None and l_ini is not None and l_fim is not None:
+                    for c in range(min(c_ini, c_fim), max(c_ini, c_fim) + 1):
+                        for l in range(min(l_ini, l_fim), max(l_ini, l_fim) + 1):
+                            v_crit = str(
                                 obter_valor_celula(
-                                    criterio_raw, mapa_dados, historico_visitados.copy()
+                                    f"{COLUNAS_EXCEL[c]}{l}",
+                                    mapa_dados,
+                                    historico_visitados.copy(),
                                 )
                             ).strip()
-                            if re.match(r"^[A-Z]+\d+$", criterio_raw)
-                            else criterio_raw
-                        )
-                        if v_crit.upper() == criterio_val.upper():
-                            count += 1
+                            criterio_val = (
+                                str(
+                                    obter_valor_celula(
+                                        criterio_raw, mapa_dados, historico_visitados.copy()
+                                    )
+                                ).strip()
+                                if re.match(r"^[A-Z]+\d+$", criterio_raw)
+                                else criterio_raw
+                            )
+                            if v_crit.upper() == criterio_val.upper():
+                                count += 1
                 return count
 
         # --- PROCV ---
@@ -321,24 +321,25 @@ def avaliar_formula(formula_str, mapa_dados, historico_visitados=None):
                 inicio, fim = matriz_str.split(":")
                 c_ini, l_ini = parse_celula(inicio)
                 c_fim, l_fim = parse_celula(fim)
-                for l in range(min(l_ini, l_fim), max(l_ini, l_fim) + 1):
-                    if (
-                        str(
-                            obter_valor_celula(
-                                f"{COLUNAS_EXCEL[c_ini]}{l}",
-                                mapa_dados,
-                                historico_visitados.copy(),
-                            )
-                        ).strip().upper()
-                        == v_busca.upper()
-                    ):
-                        target_c = c_ini + col_idx - 1
-                        if target_c <= c_fim:
-                            return obter_valor_celula(
-                                f"{COLUNAS_EXCEL[target_c]}{l}",
-                                mapa_dados,
-                                historico_visitados.copy(),
-                            )
+                if c_ini is not None and c_fim is not None and l_ini is not None and l_fim is not None:
+                    for l in range(min(l_ini, l_fim), max(l_ini, l_fim) + 1):
+                        if (
+                            str(
+                                obter_valor_celula(
+                                    f"{COLUNAS_EXCEL[c_ini]}{l}",
+                                    mapa_dados,
+                                    historico_visitados.copy(),
+                                )
+                            ).strip().upper()
+                            == v_busca.upper()
+                        ):
+                            target_c = c_ini + col_idx - 1
+                            if target_c <= c_fim:
+                                return obter_valor_celula(
+                                    f"{COLUNAS_EXCEL[target_c]}{l}",
+                                    mapa_dados,
+                                    historico_visitados.copy(),
+                                )
                 return "#N/A"
 
         # Avaliação Matemática Padrão
@@ -470,7 +471,7 @@ df_editado = st.data_editor(
     df_exibicao, use_container_width=True, height=550, key="grid_supabase"
 )
 
-# Sincronização automática das edições na grid
+# Sincronização inteligente das edições na grid (evita sobrescrever fórmulas com o resultado exibido)
 houve_alteracao = False
 for lin_idx, lin in enumerate(range(1, len(df_exibicao) + 1)):
     for col_idx, col in enumerate(COLUNAS_EXCEL):
@@ -483,9 +484,19 @@ for lin_idx, lin in enumerate(range(1, len(df_exibicao) + 1)):
             or str(val_digitado).strip().lower() in ["none", "nan", "null"]
             else str(val_digitado).strip()
         )
+        
+        # Valor real salvo na matriz crua do session_state
+        val_atual_raw = str(st.session_state.matriz_raw.get(celula_ref, "")).strip()
+        
+        # Valor calculado exibido atualmente na tabela
         val_calculado_exibido = str(df_exibicao.iat[lin_idx, col_idx]).strip()
 
+        # Só atualiza se o usuário digitou algo diferente E se o campo original NÃO for uma fórmula, 
+        # ou se o usuário explicitamente alterou o texto da célula editável da grid.
         if val_final != val_calculado_exibido:
+            # Se o valor atual cru for uma fórmula e o usuário digitou o próprio resultado calculado, não sobrescreve a fórmula.
+            if val_atual_raw.startswith("=") and val_final == val_calculado_exibido:
+                continue
             st.session_state.matriz_raw[celula_ref] = val_final
             houve_alteracao = True
 
