@@ -43,7 +43,6 @@ def carregar_dados_supabase():
             return {}, ["A", "B", "C"]
 
         primeiro_registro = registros[0]
-        # Identifica as colunas disponíveis na tabela (ex: A, B, C, LINHA)
         colunas_disponiveis = [
             c.upper()
             for c in primeiro_registro.keys()
@@ -85,7 +84,7 @@ if "alteracoes_pendentes" not in st.session_state:
 COLUNAS_EXCEL = st.session_state.COLUNAS_EXCEL
 
 
-# 2. Função de Salvamento Inteligente (Envia diretamente A, B, C...)
+# 2. Função de Salvamento Inteligente
 def salvar_dados_supabase():
     if not supabase:
         st.error("❌ Erro: Supabase não configurado!")
@@ -102,7 +101,6 @@ def salvar_dados_supabase():
                     if lin_int not in linhas_dict:
                         linhas_dict[lin_int] = {"LINHA": lin_int}
                     
-                    # Salva usando exatamente o nome da coluna correspondente (A, B, C...)
                     if col in COLUNAS_EXCEL:
                         linhas_dict[lin_int][col] = val if val != "" else None
 
@@ -122,30 +120,7 @@ def salvar_dados_supabase():
 
 
 # ==========================================
-# BARRA SUPERIOR E NAVEGAÇÃO
-# ==========================================
-col_voltar, col_status, col_salvar, col_exportar = st.columns([2, 3, 2, 2])
-
-with col_voltar:
-    if st.button("Voltar ao Menu", use_container_width=True):
-        try:
-            st.switch_page("pages/menu.py")
-        except Exception:
-            pass
-
-with col_status:
-    if st.session_state.alteracoes_pendentes:
-        st.warning("⚠ Alterações não salvas!")
-    else:
-        st.caption("✔️ Sincronizado.")
-
-with col_salvar:
-    if st.button("💾 Salvar no Supabase", use_container_width=True, type="primary"):
-        salvar_dados_supabase()
-
-
-# ==========================================
-# MOTOR DE FÓRMULAS E CÁLCULOS
+# MOTOR DE FÓRMULAS E CÁLCULOS (Com suporte a PROCV)
 # ==========================================
 def parse_celula(ref):
     match = re.match(r"([A-Z]+)(\d+)", ref.strip().upper())
@@ -186,6 +161,37 @@ def avaliar_formula(formula_str, mapa_dados, historico_visitados=None):
         expressao = formula_str[1:].strip()
         expressao_upper = expressao.upper()
 
+        # 1. Tratamento da Função PROCV (ex: =PROCV("E"; A1:B5; 2; FALSO))
+        match_procv = re.match(r"^PROCV\((.+)\)$", expressao_upper)
+        if match_procv:
+            args_str = match_procv.group(1)
+            # Divide os argumentos considerando ponto e vírgula ou vírgula
+            args = [arg.strip().strip('"\'') for arg in re.split(r'[;,]', args_str)]
+            
+            if len(args) >= 3:
+                valor_procura = args[0]
+                intervalo = args[1]  # Ex: A1:B5
+                col_indice = int(args[2]) - 1  # Base 0 para índice da coluna
+                
+                if ":" in intervalo:
+                    ini, fim = intervalo.split(":")
+                    c_ini, l_ini = parse_celula(ini)
+                    c_fim, l_fim = parse_celula(fim)
+                    
+                    if c_ini is not None and c_fim is not None and l_ini is not None and l_fim is not None:
+                        for l in range(min(l_ini, l_fim), max(l_ini, l_fim) + 1):
+                            ref_chave = f"{COLUNAS_EXCEL[c_ini]}{l}"
+                            val_celula = str(obter_valor_celula(ref_chave, mapa_dados, historico_visitados.copy())).strip()
+                            
+                            # Compara o valor buscado
+                            if val_celula.upper() == valor_procura.upper():
+                                alvo_col_idx = c_ini + col_indice
+                                if alvo_col_idx < len(COLUNAS_EXCEL):
+                                    ref_alvo = f"{COLUNAS_EXCEL[alvo_col_idx]}{l}"
+                                    return obter_valor_celula(ref_alvo, mapa_dados, historico_visitados.copy())
+            return "#N/D"
+
+        # 2. Tratamento da Função SOMA
         match_soma = re.match(r"^SOMA\((.+)\)$", expressao_upper)
         if match_soma:
             arg = match_soma.group(1)
@@ -203,6 +209,7 @@ def avaliar_formula(formula_str, mapa_dados, historico_visitados=None):
                 total = obter_valor_numerico(arg, mapa_dados, historico_visitados.copy())
             return int(total) if total.is_integer() else round(total, 4)
 
+        # 3. Operações Matemáticas Diretas (ex: =A1+B1)
         refs = re.findall(r"\b[A-Z]+\d+\b", expressao_upper)
         for ref in refs:
             val = obter_valor_numerico(ref, mapa_dados, historico_visitados.copy())
