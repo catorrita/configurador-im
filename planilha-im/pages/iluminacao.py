@@ -15,9 +15,6 @@ SUPABASE_URL = st.secrets.get("SUPABASE_URL", "")
 SUPABASE_KEY = st.secrets.get("SUPABASE_KEY", "")
 NOME_TABELA = "ILUMINACAO_EMERGENCIA"
 
-# Colunas padrão caso a tabela esteja vazia ou sem registros
-COLUNAS_PADRAO = ["A", "B", "C", "D", "E"]
-
 
 @st.cache_resource
 def init_supabase():
@@ -25,41 +22,41 @@ def init_supabase():
         try:
             return create_client(SUPABASE_URL, SUPABASE_KEY)
         except Exception as e:
-            st.error(f"Erro ao inicializar cliente Supabase: {e}")
+            st.error(f"Erro ao inicializar Supabase: {e}")
     return None
 
 
 supabase = init_supabase()
 
 
-# 1. Carregamento dinâmico da base de dados Supabase
+# 1. Carregamento robusto do Supabase
 @st.cache_data(ttl=1)
 def carregar_dados_supabase():
     if not supabase:
-        st.warning(
-            "⚠️ Credenciais do Supabase não configuradas. Usando modo local temporário."
-        )
-        return {}, COLUNAS_PADRAO
+        return {}, ["A", "B", "C"]
 
     try:
         response = supabase.table(NOME_TABELA).select("*").execute()
         registros = response.data
 
         if not registros:
-            return {}, COLUNAS_PADRAO
+            return {}, ["A", "B", "C"]
 
-        # Identificar colunas disponíveis (excluindo LINHA e metadados)
         primeiro_registro = registros[0]
+        # Identifica as colunas ignorando LINHA e metadados
         colunas_disponiveis = [
             c.upper()
             for c in primeiro_registro.keys()
             if c.upper() != "LINHA" and not c.startswith("_")
         ]
         
+        # Se a primeira coluna veio como 'UM', normalizamos para 'A' para manter compatibilidade com fórmulas
+        if "UM" in colunas_disponiveis and "A" not in colunas_disponiveis:
+            colunas_disponiveis = ["A" if c == "UM" else c for c in colunas_disponiveis]
+
+        colunas_disponiveis = sorted(list(set(colunas_disponiveis)))
         if not colunas_disponiveis:
-            colunas_disponiveis = COLUNAS_PADRAO
-        else:
-            colunas_disponiveis = sorted(list(set(colunas_disponiveis)))
+            colunas_disponiveis = ["A", "B", "C"]
 
         mapa_dados = {}
         for reg in registros:
@@ -70,19 +67,20 @@ def carregar_dados_supabase():
                 continue
 
             for col in colunas_disponiveis:
-                # Tenta buscar a chave em maiúsculo ou minúsculo no registro do Supabase
-                val = reg.get(col, reg.get(col.lower(), ""))
+                # Busca a chave correspondente (tentando a letra original ou 'UM' se aplicável)
+                chave_busca = "UM" if col == "A" and "UM" in [k.upper() for k in reg.keys()] else col
+                val = reg.get(chave_busca, reg.get(col.lower(), ""))
                 if val is None or str(val).strip().lower() in ["none", "nan", "null"]:
                     val = ""
-                mapa_dados[f"{col.upper()}{lin_num}"] = str(val)
+                mapa_dados[f"{col}{lin_num}"] = str(val)
 
         return mapa_dados, colunas_disponiveis
     except Exception as e:
         st.error(f"Erro ao carregar dados do Supabase: {e}")
-        return {}, COLUNAS_PADRAO
+        return {}, ["A", "B", "C"]
 
 
-if "matriz_raw" not in st.session_state or "colunas_excel" not in st.session_state:
+if "matriz_raw" not in st.session_state or "COLUNAS_EXCEL" not in st.session_state:
     matriz_carregada, cols_carregadas = carregar_dados_supabase()
     st.session_state.matriz_raw = matriz_carregada
     st.session_state.COLUNAS_EXCEL = cols_carregadas
@@ -93,7 +91,7 @@ if "alteracoes_pendentes" not in st.session_state:
 COLUNAS_EXCEL = st.session_state.COLUNAS_EXCEL
 
 
-# 2. Função acionada pelo Botão de Salvar no Supabase
+# 2. Função de Salvamento Inteligente
 def salvar_dados_supabase():
     if not supabase:
         st.error("❌ Erro: Supabase não configurado!")
@@ -109,8 +107,10 @@ def salvar_dados_supabase():
                     lin_int = int(lin)
                     if lin_int not in linhas_dict:
                         linhas_dict[lin_int] = {"LINHA": lin_int}
-                    # Salva a coluna em maiúsculo conforme o padrão da tabela
-                    linhas_dict[lin_int][col.upper()] = val if val != "" else None
+                    
+                    # Se a coluna A mapeia para 'UM' no seu banco atual, ajustamos o envio
+                    col_envio = "UM" if col == "A" else col
+                    linhas_dict[lin_int][col_envio] = val if val != "" else None
 
             for lin_int, dados_linha in linhas_dict.items():
                 supabase.table(NOME_TABELA).upsert(
@@ -120,6 +120,7 @@ def salvar_dados_supabase():
         st.session_state.alteracoes_pendentes = False
         st.success("✅ Dados salvos com sucesso no Supabase!")
         st.cache_data.clear()
+        st.rerun()
         return True
     except Exception as e:
         st.error(f"Erro ao salvar no Supabase: {e}")
@@ -136,22 +137,22 @@ with col_voltar:
         try:
             st.switch_page("pages/menu.py")
         except Exception:
-            st.info("Menu indisponível neste contexto.")
+            pass
 
 with col_status:
     if st.session_state.alteracoes_pendentes:
-        st.warning("⚠️ Existem alterações não salvas!")
+        st.warning("⚠️️ Alterações não salvas!")
     else:
-        st.caption("✔️ Sincronizado com o Supabase.")
+        st.caption("✔️ Sincronizado.")
 
 with col_salvar:
-    if st.button(
-        "💾 Salvar no Supabase", use_container_width=True, type="primary"
-    ):
+    if st.button("💾 Salvar no Supabase", use_container_width=True, type="primary"):
         salvar_dados_supabase()
 
 
-# Funções de Parsing e Avaliação de Fórmulas
+# ==========================================
+# MOTOR DE FÓRMULAS E CÁLCULOS
+# ==========================================
 def parse_celula(ref):
     match = re.match(r"([A-Z]+)(\d+)", ref.strip().upper())
     if match:
@@ -184,25 +185,6 @@ def obter_valor_numerico(ref, mapa_dados, historico_visitados=None):
         return 0.0
 
 
-def dividir_argumentos(args_str):
-    partes, atual, em_aspas, caractere_aspas = [], [], False, None
-    for char in args_str:
-        if char in ('"', "'"):
-            if not em_aspas:
-                em_aspas, caractere_aspas = True, char
-            elif char == caractere_aspas:
-                em_aspas, caractere_aspas = False, None
-            atual.append(char)
-        elif char in (",", ";") and not em_aspas:
-            partes.append("".join(atual).strip())
-            atual = []
-        else:
-            atual.append(char)
-    if atual:
-        partes.append("".join(atual).strip())
-    return partes
-
-
 def avaliar_formula(formula_str, mapa_dados, historico_visitados=None):
     if historico_visitados is None:
         historico_visitados = set()
@@ -210,7 +192,7 @@ def avaliar_formula(formula_str, mapa_dados, historico_visitados=None):
         expressao = formula_str[1:].strip()
         expressao_upper = expressao.upper()
 
-        # --- SOMA ---
+        # Suporte a SOMA básica ou intervalo (ex: SOMA(A5:B5) ou SOMA(A5))
         match_soma = re.match(r"^SOMA\((.+)\)$", expressao_upper)
         if match_soma:
             arg = match_soma.group(1)
@@ -223,142 +205,12 @@ def avaliar_formula(formula_str, mapa_dados, historico_visitados=None):
                     for c in range(min(c_ini, c_fim), max(c_ini, c_fim) + 1):
                         for l in range(min(l_ini, l_fim), max(l_ini, l_fim) + 1):
                             ref = f"{COLUNAS_EXCEL[c]}{l}"
-                            total += obter_valor_numerico(
-                                ref, mapa_dados, historico_visitados.copy()
-                            )
+                            total += obter_valor_numerico(ref, mapa_dados, historico_visitados.copy())
             else:
-                total = obter_valor_numerico(
-                    arg, mapa_dados, historico_visitados.copy()
-                )
+                total = obter_valor_numerico(arg, mapa_dados, historico_visitados.copy())
             return int(total) if total.is_integer() else round(total, 4)
 
-        # --- SOMASE ---
-        match_somase = re.match(r"^SOMASE\((.+)\)$", expressao_upper)
-        if match_somase:
-            args = dividir_argumentos(match_somase.group(1))
-            if len(args) >= 2:
-                interv_crit_str = args[0]
-                criterio_raw = args[1].strip().strip('"\'')
-                interv_soma_str = args[2] if len(args) >= 3 else interv_crit_str
-                c_ini_crit, l_ini_crit = parse_celula(interv_crit_str.split(":")[0])
-                c_fim_crit, l_fim_crit = parse_celula(
-                    interv_crit_str.split(":")[-1]
-                    if ":" in interv_crit_str
-                    else interv_crit_str
-                )
-                c_ini_soma, l_ini_soma = parse_celula(interv_soma_str.split(":")[0])
-                total = 0.0
-                if c_ini_crit is not None and c_fim_crit is not None and l_ini_crit is not None and l_fim_crit is not None:
-                    for c in range(
-                        min(c_ini_crit, c_fim_crit), max(c_ini_crit, c_fim_crit) + 1
-                    ):
-                        for l in range(
-                            min(l_ini_crit, l_fim_crit), max(l_ini_crit, l_fim_crit) + 1
-                        ):
-                            v_crit = str(
-                                obter_valor_celula(
-                                    f"{COLUNAS_EXCEL[c]}{l}",
-                                    mapa_dados,
-                                    historico_visitados.copy(),
-                                )
-                            ).strip()
-                            criterio_val = (
-                                str(
-                                    obter_valor_celula(
-                                        criterio_raw, mapa_dados, historico_visitados.copy()
-                                    )
-                                ).strip()
-                                if re.match(r"^[A-Z]+\d+$", criterio_raw)
-                                else criterio_raw
-                            )
-                            if v_crit.upper() == criterio_val.upper():
-                                target_c = c_ini_soma + (c - min(c_ini_crit, c_fim_crit))
-                                target_l = l_ini_soma + (l - min(l_ini_crit, l_fim_crit))
-                                if 0 <= target_c < len(COLUNAS_EXCEL):
-                                    total += obter_valor_numerico(
-                                        f"{COLUNAS_EXCEL[target_c]}{target_l}",
-                                        mapa_dados,
-                                        historico_visitados.copy(),
-                                    )
-                return int(total) if total.is_integer() else round(total, 4)
-
-        # --- CONT.SE ---
-        match_contse = re.match(r"^CONT\.?SE\((.+)\)$", expressao_upper)
-        if match_contse:
-            args = dividir_argumentos(match_contse.group(1))
-            if len(args) == 2:
-                interv_str = args[0]
-                criterio_raw = args[1].strip().strip('"\'')
-                c_ini, l_ini = parse_celula(interv_str.split(":")[0])
-                c_fim, l_fim = parse_celula(
-                    interv_str.split(":")[-1] if ":" in interv_str else interv_str
-                )
-                count = 0
-                if c_ini is not None and c_fim is not None and l_ini is not None and l_fim is not None:
-                    for c in range(min(c_ini, c_fim), max(c_ini, c_fim) + 1):
-                        for l in range(min(l_ini, l_fim), max(l_ini, l_fim) + 1):
-                            v_crit = str(
-                                obter_valor_celula(
-                                    f"{COLUNAS_EXCEL[c]}{l}",
-                                    mapa_dados,
-                                    historico_visitados.copy(),
-                                )
-                            ).strip()
-                            criterio_val = (
-                                str(
-                                    obter_valor_celula(
-                                        criterio_raw, mapa_dados, historico_visitados.copy()
-                                    )
-                                ).strip()
-                                if re.match(r"^[A-Z]+\d+$", criterio_raw)
-                                else criterio_raw
-                            )
-                            if v_crit.upper() == criterio_val.upper():
-                                count += 1
-                return count
-
-        # --- PROCV ---
-        match_procv = re.match(r"^PROCV\((.+)\)$", expressao_upper)
-        if match_procv:
-            args = dividir_argumentos(match_procv.group(1))
-            if len(args) >= 3:
-                v_busca_raw = args[0].strip().strip('"\'')
-                matriz_str = args[1].strip()
-                col_idx = int(args[2])
-                v_busca = (
-                    str(
-                        obter_valor_celula(
-                            v_busca_raw, mapa_dados, historico_visitados.copy()
-                        )
-                    ).strip()
-                    if re.match(r"^[A-Z]+\d+$", v_busca_raw)
-                    else v_busca_raw
-                )
-                inicio, fim = matriz_str.split(":")
-                c_ini, l_ini = parse_celula(inicio)
-                c_fim, l_fim = parse_celula(fim)
-                if c_ini is not None and c_fim is not None and l_ini is not None and l_fim is not None:
-                    for l in range(min(l_ini, l_fim), max(l_ini, l_fim) + 1):
-                        if (
-                            str(
-                                obter_valor_celula(
-                                    f"{COLUNAS_EXCEL[c_ini]}{l}",
-                                    mapa_dados,
-                                    historico_visitados.copy(),
-                                )
-                            ).strip().upper()
-                            == v_busca.upper()
-                        ):
-                            target_c = c_ini + col_idx - 1
-                            if target_c <= c_fim:
-                                return obter_valor_celula(
-                                    f"{COLUNAS_EXCEL[target_c]}{l}",
-                                    mapa_dados,
-                                    historico_visitados.copy(),
-                                )
-                return "#N/A"
-
-        # Avaliação Matemática Padrão
+        # Avaliação Matemática Direta (ex: =a5+b5)
         refs = re.findall(r"\b[A-Z]+\d+\b", expressao_upper)
         for ref in refs:
             val = obter_valor_numerico(ref, mapa_dados, historico_visitados.copy())
@@ -392,11 +244,7 @@ def gerar_dataframe_calculado():
                 linha_vals.append("")
             elif conteudo.startswith("="):
                 res = avaliar_formula(conteudo, mapa_raw)
-                linha_vals.append(
-                    ""
-                    if res is None or str(res).lower() in ["none", "nan", "null"]
-                    else str(res)
-                )
+                linha_vals.append("" if res is None or str(res).lower() in ["none", "nan", "null"] else str(res))
             else:
                 linha_vals.append(conteudo)
         dados_grid.append(linha_vals)
@@ -415,11 +263,9 @@ def gerar_excel():
     ws = wb.active
     ws.title = "Iluminação"
     ws.append(COLUNAS_EXCEL)
-
     df_temp = gerar_dataframe_calculado()
-    for idx, row in df_temp.iterrows():
+    for _, row in df_temp.iterrows():
         ws.append(list(row))
-
     wb.save(buffer)
     buffer.seek(0)
     return buffer
@@ -431,18 +277,14 @@ def gerar_excel():
 st.title("ILUMINAÇÃO DE EMERGÊNCIA")
 
 max_linhas_ativas = len(gerar_dataframe_calculado())
-opcoes_celulas = [
-    f"{col}{lin}" for lin in range(1, max_linhas_ativas + 1) for col in COLUNAS_EXCEL
-]
+opcoes_celulas = [f"{col}{lin}" for lin in range(1, max_linhas_ativas + 1) for col in COLUNAS_EXCEL]
 
 col_celula, col_fx, col_exp = st.columns([2, 6, 2])
 
 with col_celula:
     celula_selecionada = st.selectbox("Célula", opcoes_celulas, index=0)
 
-val_atual = str(
-    st.session_state.matriz_raw.get(celula_selecionada, "")
-).strip()
+val_atual = str(st.session_state.matriz_raw.get(celula_selecionada, "")).strip()
 if val_atual.lower() in ["none", "nan", "null"]:
     val_atual = ""
 
@@ -473,21 +315,19 @@ with col_exp:
         label="📥 Exportar Excel",
         data=excel_file,
         file_name="iluminacao_emergencia.xlsx",
-        mime=(
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        ),
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         use_container_width=True,
     )
 
 st.divider()
 
-# Grade Interativa
+# Grade Interativa (st.data_editor)
 df_exibicao = gerar_dataframe_calculado()
 df_editado = st.data_editor(
     df_exibicao, use_container_width=True, height=550, key="grid_supabase"
 )
 
-# Sincronização inteligente das edições na grid
+# Sincronização imediata das edições feitas diretamente na tabela
 houve_alteracao = False
 for lin_idx, lin in enumerate(range(1, len(df_exibicao) + 1)):
     for col_idx, col in enumerate(COLUNAS_EXCEL):
@@ -495,9 +335,7 @@ for lin_idx, lin in enumerate(range(1, len(df_exibicao) + 1)):
         val_digitado = df_editado.iat[lin_idx, col_idx]
         val_final = (
             ""
-            if pd.isna(val_digitado)
-            or val_digitado is None
-            or str(val_digitado).strip().lower() in ["none", "nan", "null"]
+            if pd.isna(val_digitado) or val_digitado is None or str(val_digitado).strip().lower() in ["none", "nan", "null"]
             else str(val_digitado).strip()
         )
         
