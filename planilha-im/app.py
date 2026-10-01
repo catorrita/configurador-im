@@ -1,191 +1,96 @@
 import streamlit as st
-import os
+import pandas as pd
+from supabase import create_client
 
-# Configuração da página
-st.set_page_config(
-    page_title="Configurador IM",
-    layout="wide",
-    initial_sidebar_state="collapsed"
-)
+st.set_page_config(page_title="Configurador Instalações Mecânicas Fockink", layout="wide")
 
-# Estilização CSS refinada
-st.markdown("""
-    <style>
-    /* Oculta menus padrão do Streamlit */
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    header {visibility: hidden;}
+# Conexão com o Supabase
+SUPABASE_URL = st.secrets["SUPABASE_URL"]
+SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+# Inicializa o estado de login na sessão
+if "autenticado" not in st.session_state:
+    st.session_state["autenticado"] = False
+    st.session_state["usuario_email"] = ""
+
+# --- TELA DE LOGIN ---
+if not st.session_state["autenticado"]:
+    st.markdown("<h1 style='text-align: center;'>CONFIGURADOR INSTALAÇÕES MECÂNICAS FOCKINK</h1>", unsafe_allow_html=True)
+    st.write("")
     
-    /* Faixa Amarela Superior */
-    .yellow-header {
-        background-color: #FFFF00;
-        border: 1px solid #000000;
-        padding: 5px 10px;
-        font-weight: bold;
-        font-size: 13px;
-        color: #000000;
-        display: inline-block;
-        margin-bottom: 20px;
-        font-family: Arial, sans-serif;
-    }
-
-    /* Ícone (✖ ou ✔) à esquerda do quadrado verde */
-    .status-icon-red {
-        color: #C00000;
-        font-weight: bold;
-        font-size: 18px;
-        text-align: center;
-        line-height: 35px;
-        font-family: Arial, sans-serif;
-    }
+    # Centralizando um pouco o formulário de login
+    col1, col2, col3 = st.columns([1, 2, 1])
     
-    .status-icon-green {
-        color: #70AD47;
-        font-weight: bold;
-        font-size: 18px;
-        text-align: center;
-        line-height: 35px;
-        font-family: Arial, sans-serif;
-    }
+    with col2:
+        st.markdown("### 🔐 Acesso ao Sistema")
+        with st.form("form_login"):
+            email_input = st.text_input("E-mail")
+            senha_input = st.text_input("Senha", type="password")
+            
+            botao_entrar = st.form_submit_button("Entrar", type="primary", use_container_width=True)
+            
+            if botao_entrar:
+                if not email_input or not senha_input:
+                    st.warning("Por favor, preencha o e-mail e a senha.")
+                else:
+                    try:
+                        # Consulta o e-mail na tabela LOGIN do Supabase
+                        response = supabase.table("LOGIN").select("*").eq("EMAIL", email_input).execute()
+                        dados = response.data
+                        
+                        if not dados or len(dados) == 0:
+                            st.error("E-mail não cadastrado, procure o administrador.")
+                        else:
+                            usuario = dados[0]
+                            # Valida se a senha confere
+                            if senha_input == usuario["SENHA"]:
+                                st.session_state["autenticado"] = True
+                                st.session_state["usuario_email"] = email_input
+                                st.success("Login realizado com sucesso!")
+                                st.rerun()
+                            else:
+                                st.error("Senha incorreta.")
+                    except Exception as e:
+                        st.error(f"Erro ao conectar com o banco de dados: {e}")
 
-    /* Quadrado Verde Totalmente Vazio (Botão sem texto) */
-    div[data-testid="stColumn"]:nth-child(2) div.stButton > button {
-        background-color: #92D050 !important;
-        border: 1px solid #595959 !important;
-        width: 35px !important;
-        height: 35px !important;
-        min-width: 35px !important;
-        padding: 0px !important;
-        margin: 0px !important;
-        border-radius: 0px !important;
-        box-shadow: none !important;
-    }
-
-    /* Texto da Atividade à direita */
-    .activity-label {
-        font-family: Arial, sans-serif;
-        font-size: 13px;
-        color: #000000;
-        line-height: 35px;
-        font-weight: normal;
-        white-space: nowrap;
-    }
-
-    /* --- ESTILO DOS BOTÕES DE NAVEGAÇÃO --- */
-    .btn-container {
-        display: flex;
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 10px;
-    }
-
-    .btn-custom {
-        display: inline-block;
-        width: 150px;
-        color: #FFFFFF !important;
-        font-weight: bold;
-        font-size: 12px;
-        text-align: center;
-        text-decoration: none !important;
-        padding: 10px 4px;
-        font-family: Arial, sans-serif;
-        box-shadow: 2px 2px 4px rgba(0,0,0,0.2);
-        box-sizing: border-box;
-    }
-
-    .btn-codigos {
-        background-color: #4472C4;
-        border: 1px solid #2F5597;
-        border-radius: 0px 18px 18px 0px;
-    }
-
-    .btn-lista {
-        background-color: #ED7D31;
-        border: 1px solid #C65911;
-        border-radius: 0px 12px 0px 0px;
-    }
-
-    .btn-calculos {
-        background-color: #FF0000;
-        border: 1px solid #C00000;
-        border-radius: 0px 12px 0px 0px;
-    }
-
-    .btn-bd {
-        background-color: #7030A0;
-        border: 1px solid #4B206B;
-        border-radius: 0px 14px 0px 0px;
-    }
-
-    .btn-custom:hover {
-        opacity: 0.88;
-    }
-    </style>
-""", unsafe_allow_html=True)
-
-# 1. Cabeçalho Amarelo
-st.markdown('<div class="yellow-header">CLIQUE NO QUADRADO ABAIXO CASO A OBRA TENHA A ATIVIDADE AO LADO:</div>', unsafe_allow_html=True)
-
-# Layout Principal: [Atividades] | [Botões] | [Imagem]
-col_atividades, col_botoes, col_imagem = st.columns([2.5, 1.1, 3.5])
-
-# --- COLUNA 1: Lista de Atividades ---
-with col_atividades:
-    atividades = [
-        "351 / ILUMINAÇÃO EMERGÊNCIA",
-        "352 / ALARME INCENDIO",
-        "355 / REDE DE HIDRANTES",
-        "357 / CASA DE BOMBAS",
-        "358 / EXTINTORES",
-        "526 / REDE DE AR COMPRIMIDO",
-        "532 - REDE DE AGUA INDUSTRIAL",
-        "351 / SINALIZAÇÃO DE EMERGENCIA",
-        "534 / INSTALAÇÃO REDE DE GÁS GLP"
-    ]
-
-    for idx, label in enumerate(atividades):
-        # [Ícone (✖/✔)] | [Quadrado Verde Vazio] | [Texto da Atividade]
-        c_icon, c_box, c_text = st.columns([0.25, 0.4, 3.3])
+# --- TELA DO MENU / APLICAÇÃO PRINCIPAL ---
+else:
+    # Barra lateral com opção de sair
+    st.sidebar.title("Menu do Sistema")
+    st.sidebar.write(f"Logado como: **{st.session_state['usuario_email']}**")
+    
+    if st.sidebar.button("🚪 Sair / Logout"):
+        st.session_state["autenticado"] = False
+        st.session_state["usuario_email"] = ""
+        st.rerun()
         
-        state_key = f"active_{idx}"
-        if state_key not in st.session_state:
-            st.session_state[state_key] = False
+    st.sidebar.markdown("---")
 
-        # Coluna do Ícone (à esquerda do quadrado verde)
-        with c_icon:
-            if st.session_state[state_key]:
-                st.markdown('<div class="status-icon-green">✔</div>', unsafe_allow_html=True)
-            else:
-                st.markdown('<div class="status-icon-red">✖</div>', unsafe_allow_html=True)
+    # Conteúdo principal da aplicação (A sua base de dados)
+    st.title("📋 Base de Dados Geral")
 
-        # Coluna do Quadrado Verde (Vazio por dentro)
-        with c_box:
-            if st.button(" ", key=f"btn_toggle_{idx}"):
-                st.session_state[state_key] = not st.session_state[state_key]
+    try:
+        response = supabase.table("Base de Dados").select("*").execute()
+        dados = response.data
+        
+        if dados and len(dados) > 0:
+            df = pd.DataFrame(dados)
+            
+            # Ordem fixa e obrigatória das colunas
+            colunas_desejadas = ["COD_SAI", "COD_SGE", "COD_SAP", "DESC_ITEM", "MODIF_POR"]
+            colunas_existentes = [c for c in colunas_desejadas if c in df.columns]
+            df = df.loc[:, colunas_existentes]
+            
+            df_editado = st.data_editor(df, use_container_width=True, height=500, key="editor_simples")
+            
+            if st.button("💾 Salvar Alterações", type="primary"):
+                registros = df_editado.to_dict(orient="records")
+                supabase.table("Base de Dados").upsert(registros, on_conflict="COD_SGE").execute()
+                st.success("Alterações salvas com sucesso!")
                 st.rerun()
+        else:
+            st.warning("A tabela está vazia.")
 
-        # Coluna do Texto
-        with c_text:
-            st.markdown(f'<div class="activity-label">{label}</div>', unsafe_allow_html=True)
-
-
-# --- COLUNA 2: Botões de Navegação ---
-with col_botoes:
-    st.write("") # Espaçamento
-    st.markdown("""
-        <div class="btn-container">
-            <a href="codigos" target="_self" class="btn-custom btn-codigos">CÓDIGOS ➔</a>
-            <a href="lista_material" target="_self" class="btn-custom btn-lista">LISTA DE<br>MATERIAL</a>
-            <a href="calculos" target="_self" class="btn-custom btn-calculos">CÁLCULOS</a>
-            <a href="base_de_dados" target="_self" class="btn-custom btn-bd">BASE DE<br>DADOS</a>
-        </div>
-    """, unsafe_allow_html=True)
-
-
-# --- COLUNA 3: Imagem ---
-with col_imagem:
-    caminho_imagem = r"planilha-im/pages/imagem_menu.png"
-    if os.path.exists(caminho_imagem):
-        st.image(caminho_imagem, use_container_width=True)
-    else:
-        st.warning(f"Imagem não encontrada em:\n{caminho_imagem}")
+    except Exception as e:
+        st.error(f"Erro ao carregar dados: {e}")
