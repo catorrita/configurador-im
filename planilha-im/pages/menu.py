@@ -144,17 +144,18 @@ with col_atividades:
   ]
 
   # Mapeamento correspondente de cada índice para a sua respetiva página
-  paginas_destino = {
-      0: "pages/iluminacao",
-      1: "pages/alarme_incendio",
-      2: "pages/rede_hidrantes",
-      3: "pages/casa_bombas",
-      4: "pages/extintores",
-      5: "pages/ar_comprimido",
-      6: "pages/agua_industrial",
-      7: "pages/sinalizacao_emergencia",
-      8: "pages/gas_glp",
-  }
+
+paginas_destino = {
+    0: "pages/iluminacao.py",
+    1: "pages/alarme_incendio.py",
+    2: "pages/rede_hidrantes.py",
+    3: "pages/casa_bombas.py",
+    4: "pages/extintores.py",
+    5: "pages/ar_comprimido.py",
+    6: "pages/agua_industrial.py",
+    7: "pages/sinalizacao_emergencia.py",
+    8: "pages/gas_glp.py",
+}
 
   for idx, label in enumerate(atividades):
     # [Ícone (✖/✔)] | [Quadrado Verde Vazio] | [Texto da Atividade]
