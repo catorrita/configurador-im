@@ -131,42 +131,66 @@ col_atividades, col_botoes, col_imagem = st.columns([2.5, 1.1, 3.5])
 
 # --- COLUNA 1: Lista de Atividades ---
 with col_atividades:
-    atividades = [
-        "351 / ILUMINAÇÃO EMERGÊNCIA",
-        "352 / ALARME INCENDIO",
-        "355 / REDE DE HIDRANTES",
-        "357 / CASA DE BOMBAS",
-        "358 / EXTINTORES",
-        "526 / REDE DE AR COMPRIMIDO",
-        "532 - REDE DE AGUA INDUSTRIAL",
-        "351 / SINALIZAÇÃO DE EMERGENCIA",
-        "534 / INSTALAÇÃO REDE DE GÁS GLP"
-    ]
+  atividades = [
+      "351 / ILUMINAÇÃO EMERGÊNCIA",
+      "352 / ALARME INCENDIO",
+      "355 / REDE DE HIDRANTES",
+      "357 / CASA DE BOMBAS",
+      "358 / EXTINTORES",
+      "526 / REDE DE AR COMPRIMIDO",
+      "532 - REDE DE AGUA INDUSTRIAL",
+      "351 / SINALIZAÇÃO DE EMERGENCIA",
+      "534 / INSTALAÇÃO REDE DE GÁS GLP",
+  ]
 
-    for idx, label in enumerate(atividades):
-        # [Ícone (✖/✔)] | [Quadrado Verde Vazio] | [Texto da Atividade]
-        c_icon, c_box, c_text = st.columns([0.25, 0.4, 3.3])
-        
-        state_key = f"active_{idx}"
-        if state_key not in st.session_state:
-            st.session_state[state_key] = False
+  # Mapeamento correspondente de cada índice para a sua respetiva página
+  paginas_destino = {
+      0: "pages/iluminacao",
+      1: "pages/alarme_incendio",
+      2: "pages/rede_hidrantes",
+      3: "pages/casa_bombas",
+      4: "pages/extintores",
+      5: "pages/ar_comprimido",
+      6: "pages/agua_industrial",
+      7: "pages/sinalizacao_emergencia",
+      8: "pages/gas_glp",
+  }
 
-        # Coluna do Ícone (à esquerda do quadrado verde)
-        with c_icon:
-            if st.session_state[state_key]:
-                st.markdown('<div class="status-icon-green">✔</div>', unsafe_allow_html=True)
-            else:
-                st.markdown('<div class="status-icon-red">✖</div>', unsafe_allow_html=True)
+  for idx, label in enumerate(atividades):
+    # [Ícone (✖/✔)] | [Quadrado Verde Vazio] | [Texto da Atividade]
+    c_icon, c_box, c_text = st.columns([0.25, 0.4, 3.3])
 
-        # Coluna do Quadrado Verde (Vazio por dentro)
-        with c_box:
-            if st.button(" ", key=f"btn_toggle_{idx}"):
-                st.session_state[state_key] = not st.session_state[state_key]
-                st.rerun()
+    state_key = f"active_{idx}"
+    if state_key not in st.session_state:
+      st.session_state[state_key] = False
 
-        # Coluna do Texto
-        with c_text:
-            st.markdown(f'<div class="activity-label">{label}</div>', unsafe_allow_html=True)
+    # Coluna do Ícone (à esquerda do quadrado verde)
+    with c_icon:
+      if st.session_state[state_key]:
+        st.markdown(
+            '<div class="status-icon-green">✔</div>', unsafe_allow_html=True
+        )
+      else:
+        st.markdown(
+            '<div class="status-icon-red">✖</div>', unsafe_allow_html=True
+        )
+
+    # Coluna do Quadrado Verde (Vazio por dentro)
+    with c_box:
+      if st.button(" ", key=f"btn_toggle_{idx}"):
+        st.session_state[state_key] = not st.session_state[state_key]
+
+        # Se o botão foi ativado, redireciona para a página correspondente da lista
+        if st.session_state[state_key] and idx in paginas_destino:
+          st.switch_page(paginas_destino[idx])
+        else:
+          st.rerun()
+
+    # Coluna do Texto
+    with c_text:
+      st.markdown(
+          f'<div class="activity-label">{label}</div>', unsafe_allow_html=True
+      )
 
 
 # --- COLUNA 2: Botões de Navegação ---
