@@ -14,7 +14,7 @@ SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
   
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-st.title("📋 Base de Dados Geral")
+st.title("Base de Dados")
 
 try:
     response = supabase.table("Base de Dados").select("*").execute()
