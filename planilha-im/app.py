@@ -29,7 +29,7 @@ if not st.session_state["autenticado"]:
     col1, col2, col3 = st.columns([1, 2, 1])
     
     with col2:
-        st.markdown("### 🔐 Acesso ao Sistema")
+        st.markdown("### Acesso ao Sistema")
         with st.form("form_login"):
             email_input = st.text_input("E-mail")
             senha_input = st.text_input("Senha", type="password")
