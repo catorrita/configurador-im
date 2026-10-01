@@ -2,14 +2,16 @@ import streamlit as st
 import pandas as pd
 from supabase import create_client
 
+if st.button("Voltar", type="primary"):
+    st.switch_page("pages/menu.py")
+  
 st.set_page_config(page_title="Base de Dados", layout="wide")
 
 SUPABASE_URL = st.secrets["SUPABASE_URL"]
 SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 
-with col_voltar:
-  if st.button("← Ir ao Início", use_container_width=True):
-    st.switch_page("menu.py")
+
+  
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 st.title("📋 Base de Dados Geral")
