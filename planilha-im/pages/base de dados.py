@@ -18,9 +18,8 @@ try:
     if dados and len(dados) > 0:
         df = pd.DataFrame(dados)
         
-        # Garante a ordem correta exata das colunas para evitar mistura
-        colunas_desejadas = ["COD_SAI", "COD_SGE", "DESC_ITEM", "MODIF_POR"]
-        # Mantém apenas as colunas que existem no DataFrame
+        # Ordem exata correspondente às colunas reais da sua tabela
+        colunas_desejadas = ["COD_SAI", "COD_SGE", "COD_SAP", "DESC_ITEM", "MODIF_POR"]
         colunas_existentes = [c for c in colunas_desejadas if c in df.columns]
         df = df[colunas_existentes]
         
