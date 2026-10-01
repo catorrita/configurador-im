@@ -120,7 +120,7 @@ def salvar_dados_supabase():
 
 
 # ==========================================
-# MOTOR DE FÓRMULAS E CÁLCULOS (Com suporte a PROCV)
+# MOTOR DE FÓRMULAS E CÁLCULOS AVANÇADO
 # ==========================================
 def parse_celula(ref):
     match = re.match(r"([A-Z]+)(\d+)", ref.strip().upper())
@@ -134,6 +134,7 @@ def parse_celula(ref):
 def obter_valor_celula(ref, mapa_dados, historico_visitados=None):
     if historico_visitados is None:
         historico_visitados = set()
+    ref = ref.strip().upper()
     if ref in historico_visitados:
         return 0.0
     historico_visitados.add(ref)
@@ -154,6 +155,32 @@ def obter_valor_numerico(ref, mapa_dados, historico_visitados=None):
         return 0.0
 
 
+def extrair_argumentos(args_str):
+    """Divide argumentos de funções respeitando parênteses e aspas."""
+    args = []
+    atual = ""
+    dentro_aspas = False
+    parenteses = 0
+    for char in args_str:
+        if char == '"' or char == "'":
+            dentro_aspas = not dentro_aspas
+            atual += char
+        elif char == '(' and not dentro_aspas:
+            parenteses += 1
+            atual += char
+        elif char == ')' and not dentro_aspas:
+            parenteses -= 1
+            atual += char
+        elif (char == ';' or char == ',') and not dentro_aspas and parenteses == 0:
+            args.append(atual.strip())
+            atual = ""
+        else:
+            atual += char
+    if atual.strip():
+        args.append(atual.strip())
+    return args
+
+
 def avaliar_formula(formula_str, mapa_dados, historico_visitados=None):
     if historico_visitados is None:
         historico_visitados = set()
@@ -161,62 +188,169 @@ def avaliar_formula(formula_str, mapa_dados, historico_visitados=None):
         expressao = formula_str[1:].strip()
         expressao_upper = expressao.upper()
 
-        # 1. Tratamento da Função PROCV (ex: =PROCV("E"; A1:B5; 2; FALSO))
-        match_procv = re.match(r"^PROCV\((.+)\)$", expressao_upper)
-        if match_procv:
-            args_str = match_procv.group(1)
-            # Divide os argumentos considerando ponto e vírgula ou vírgula
-            args = [arg.strip().strip('"\'') for arg in re.split(r'[;,]', args_str)]
-            
-            if len(args) >= 3:
-                valor_procura = args[0]
-                intervalo = args[1]  # Ex: A1:B5
-                col_indice = int(args[2]) - 1  # Base 0 para índice da coluna
-                
-                if ":" in intervalo:
-                    ini, fim = intervalo.split(":")
-                    c_ini, l_ini = parse_celula(ini)
-                    c_fim, l_fim = parse_celula(fim)
-                    
-                    if c_ini is not None and c_fim is not None and l_ini is not None and l_fim is not None:
-                        for l in range(min(l_ini, l_fim), max(l_ini, l_fim) + 1):
-                            ref_chave = f"{COLUNAS_EXCEL[c_ini]}{l}"
-                            val_celula = str(obter_valor_celula(ref_chave, mapa_dados, historico_visitados.copy())).strip()
+        # 1. Função SOMASE(intervalo; critério; [intervalo_soma])
+        if expressao_upper.startswith("SOMASE("):
+            match_func = re.match(r"^SOMASE\((.+)\)$", expressao_upper)
+            if match_func:
+                args = extrair_argumentos(match_func.group(1))
+                if len(args) >= 2:
+                    intervalo_crit = args[0]
+                    criterio = args[1].strip('"\'')
+                    intervalo_soma = args[2] if len(args) >= 3 else intervalo_crit
+
+                    total = 0.0
+                    if ":" in intervalo_crit and ":" in intervalo_soma:
+                        ini_c, fim_c = intervalo_crit.split(":")
+                        c_ini_c, l_ini_c = parse_celula(ini_c)
+                        c_fim_c, l_fim_c = parse_celula(fim_c)
+
+                        ini_s, fim_s = intervalo_soma.split(":")
+                        c_ini_s, l_ini_s = parse_celula(ini_s)
+                        c_fim_s, l_fim_s = parse_celula(fim_s)
+
+                        if c_ini_c is not None and c_ini_s is not None:
+                            linhas_c = range(min(l_ini_c, l_fim_c), max(l_ini_c, l_fim_c) + 1)
+                            linhas_s = range(min(l_ini_s, l_fim_s), max(l_ini_s, l_fim_s) + 1)
                             
-                            # Compara o valor buscado
-                            if val_celula.upper() == valor_procura.upper():
-                                alvo_col_idx = c_ini + col_indice
-                                if alvo_col_idx < len(COLUNAS_EXCEL):
-                                    ref_alvo = f"{COLUNAS_EXCEL[alvo_col_idx]}{l}"
-                                    return obter_valor_celula(ref_alvo, mapa_dados, historico_visitados.copy())
+                            for idx, l_c in enumerate(linhas_c):
+                                if idx < len(linhas_s):
+                                    l_s = list(linhas_s)[idx]
+                                    ref_c = f"{COLUNAS_EXCEL[c_ini_c]}{l_c}"
+                                    ref_s = f"{COLUNAS_EXCEL[c_ini_s]}{l_s}"
+                                    val_cel_c = str(obter_valor_celula(ref_c, mapa_dados, historico_visitados.copy())).strip()
+                                    
+                                    # Avalia critério (ex: igual a string ou número)
+                                    atende = False
+                                    if val_cel_c.upper() == criterio.upper():
+                                        atende = True
+                                    else:
+                                        try:
+                                            if float(val_cel_c.replace(",", ".")) == float(criterio.replace(",", ".")):
+                                                atende = True
+                                        except:
+                                            pass
+                                            
+                                    if atende:
+                                        total += obter_valor_numerico(ref_s, mapa_dados, historico_visitados.copy())
+                    return int(total) if total.is_integer() else round(total, 4)
+
+        # 2. Função SOMA(intervalo ou lista)
+        if expressao_upper.startswith("SOMA("):
+            match_func = re.match(r"^SOMA\((.+)\)$", expressao_upper)
+            if match_func:
+                args = extrair_argumentos(match_func.group(1))
+                total = 0.0
+                for arg in args:
+                    if ":" in arg:
+                        ini, fim = arg.split(":")
+                        c_ini, l_ini = parse_celula(ini)
+                        c_fim, l_fim = parse_celula(fim)
+                        if c_ini is not None and c_fim is not None:
+                            for c in range(min(c_ini, c_fim), max(c_ini, c_fim) + 1):
+                                for l in range(min(l_ini, l_fim), max(l_ini, l_fim) + 1):
+                                    ref = f"{COLUNAS_EXCEL[c]}{l}"
+                                    total += obter_valor_numerico(ref, mapa_dados, historico_visitados.copy())
+                    else:
+                        if re.match(r"^[A-Z]+\d+$", arg.upper()):
+                            total += obter_valor_numerico(arg, mapa_dados, historico_visitados.copy())
+                        else:
+                            try:
+                                total += float(arg.replace(",", "."))
+                            except:
+                                pass
+                return int(total) if total.is_integer() else round(total, 4)
+
+        # 3. Função CORRESP(valor; intervalo; tipo)
+        if expressao_upper.startswith("CORRESP("):
+            match_func = re.match(r"^CORRESP\((.+)\)$", expressao_upper)
+            if match_func:
+                args = extrair_argumentos(match_func.group(1))
+                if len(args) >= 2:
+                    val_busca = args[0].strip('"\'')
+                    intervalo = args[1]
+                    if ":" in intervalo:
+                        ini, fim = intervalo.split(":")
+                        c_ini, l_ini = parse_celula(ini)
+                        c_fim, l_fim = parse_celula(fim)
+                        if c_ini is not None:
+                            pos = 1
+                            for c in range(min(c_ini, c_fim), max(c_ini, c_fim) + 1):
+                                for l in range(min(l_ini, l_fim), max(l_ini, l_fim) + 1):
+                                    ref = f"{COLUNAS_EXCEL[c]}{l}"
+                                    val_cel = str(obter_valor_celula(ref, mapa_dados, historico_visitados.copy())).strip()
+                                    if val_cel.upper() == val_busca.upper():
+                                        return pos
+                                    pos += 1
             return "#N/D"
 
-        # 2. Tratamento da Função SOMA
-        match_soma = re.match(r"^SOMA\((.+)\)$", expressao_upper)
-        if match_soma:
-            arg = match_soma.group(1)
-            total = 0.0
-            if ":" in arg:
-                ini, fim = arg.split(":")
-                c_ini, l_ini = parse_celula(ini)
-                c_fim, l_fim = parse_celula(fim)
-                if c_ini is not None and c_fim is not None and l_ini is not None and l_fim is not None:
-                    for c in range(min(c_ini, c_fim), max(c_ini, c_fim) + 1):
-                        for l in range(min(l_ini, l_fim), max(l_ini, l_fim) + 1):
-                            ref = f"{COLUNAS_EXCEL[c]}{l}"
-                            total += obter_valor_numerico(ref, mapa_dados, historico_visitados.copy())
-            else:
-                total = obter_valor_numerico(arg, mapa_dados, historico_visitados.copy())
-            return int(total) if total.is_integer() else round(total, 4)
+        # 4. Função INDICE(intervalo; linha; [coluna])
+        if expressao_upper.startswith("INDICE("):
+            match_func = re.match(r"^INDICE\((.+)\)$", expressao_upper)
+            if match_func:
+                args = extrair_argumentos(match_func.group(1))
+                if len(args) >= 2:
+                    intervalo = args[0]
+                    num_linha = int(float(eval(args[1], {"__builtins__": None}, {})))
+                    num_col = int(float(args[2])) if len(args) >= 3 else 1
+                    if ":" in intervalo:
+                        ini, fim = intervalo.split(":")
+                        c_ini, l_ini = parse_celula(ini)
+                        c_fim, l_fim = parse_celula(fim)
+                        if c_ini is not None:
+                            alvo_c = c_ini + num_col - 1
+                            alvo_l = l_ini + num_linha - 1
+                            if alvo_c < len(COLUNAS_EXCEL):
+                                ref_alvo = f"{COLUNAS_EXCEL[alvo_c]}{alvo_l}"
+                                return obter_valor_celula(ref_alvo, mapa_dados, historico_visitados.copy())
+            return "#REF!"
 
-        # 3. Operações Matemáticas Diretas (ex: =A1+B1)
-        refs = re.findall(r"\b[A-Z]+\d+\b", expressao_upper)
+        # 5. Função PROCV(valor; intervalo; coluna; [falso/verdadeiro])
+        if expressao_upper.startswith("PROCV("):
+            match_func = re.match(r"^PROCV\((.+)\)$", expressao_upper)
+            if match_func:
+                args = extrair_argumentos(match_func.group(1))
+                if len(args) >= 3:
+                    valor_procura = args[0].strip('"\'')
+                    intervalo = args[1]
+                    col_indice = int(float(args[2])) - 1
+                    if ":" in intervalo:
+                        ini, fim = intervalo.split(":")
+                        c_ini, l_ini = parse_celula(ini)
+                        c_fim, l_fim = parse_celula(fim)
+                        if c_ini is not None:
+                            for l in range(min(l_ini, l_fim), max(l_ini, l_fim) + 1):
+                                ref_chave = f"{COLUNAS_EXCEL[c_ini]}{l}"
+                                val_celula = str(obter_valor_celula(ref_chave, mapa_dados, historico_visitados.copy())).strip()
+                                if val_celula.upper() == valor_procura.upper():
+                                    alvo_col_idx = c_ini + col_indice
+                                    if alvo_col_idx < len(COLUNAS_EXCEL):
+                                        ref_alvo = f"{COLUNAS_EXCEL[alvo_col_idx]}{l}"
+                                        return obter_valor_celula(ref_alvo, mapa_dados, historico_visitados.copy())
+            return "#N/D"
+
+        # 6. Concatenação com operador & (ex: A1 & " - " & B1)
+        if "&" in expressao:
+            partes = expressao.split("&")
+            resultado_concatenado = ""
+            for p in partes:
+                p_trim = p.strip()
+                if (p_trim.startswith('"') and p_trim.endswith('"')) or (p_trim.startswith("'") and p_trim.endswith("'")):
+                    resultado_concatenado += p_trim[1:-1]
+                elif re.match(r"^[A-Z]+\d+$", p_trim.upper()):
+                    resultado_concatenado += str(obter_valor_celula(p_trim, mapa_dados, historico_visitados.copy()))
+                else:
+                    resultado_concatenado += p_trim
+            return resultado_concatenado
+
+        # 7. Operações Matemáticas Padrão (+, -, *, /, ^)
+        expressao_calc = expressao_upper
+        refs = re.findall(r"\b[A-Z]+\d+\b", expressao_calc)
         for ref in refs:
             val = obter_valor_numerico(ref, mapa_dados, historico_visitados.copy())
-            expressao_upper = re.sub(r"\b" + ref + r"\b", str(val), expressao_upper)
+            expressao_calc = re.sub(r"\b" + ref + r"\b", str(val), expressao_calc)
 
-        expressao_upper = expressao_upper.replace("^", "**")
-        resultado = eval(expressao_upper, {"__builtins__": None}, {})
+        expressao_calc = expressao_calc.replace("^", "**")
+        resultado = eval(expressao_calc, {"__builtins__": None}, {})
         if isinstance(resultado, float):
             return int(resultado) if resultado.is_integer() else round(resultado, 4)
         return resultado
