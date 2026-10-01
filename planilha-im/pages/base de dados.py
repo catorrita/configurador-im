@@ -18,20 +18,24 @@ try:
     if dados and len(dados) > 0:
         df = pd.DataFrame(dados)
         
-        # Ordem exata correspondente às colunas reais da sua tabela
+        # Garante a ordem exata das colunas
         colunas_desejadas = ["COD_SAI", "COD_SGE", "COD_SAP", "DESC_ITEM", "MODIF_POR"]
         colunas_existentes = [c for c in colunas_desejadas if c in df.columns]
-        df = df[colunas_existentes]
+        df = df.loc[:, colunas_existentes]
         
+        # Exibe o editor de dados
         df_editado = st.data_editor(df, use_container_width=True, height=500, key="editor_simples")
         
         if st.button("💾 Salvar Alterações", type="primary"):
             registros = df_editado.to_dict(orient="records")
-            supabase.table("Base de Dados").upsert(registros).execute()
-            st.success("Salvo com sucesso!")
+            
+            # Executa o upsert especificando que a chave de conflito é o COD_SGE
+            supabase.table("Base de Dados").upsert(registros, on_conflict="COD_SGE").execute()
+            
+            st.success("Alterações salvas com sucesso!")
             st.rerun()
     else:
         st.warning("A tabela está vazia.")
 
 except Exception as e:
-    st.error(f"Erro: {e}")
+    st.error(f"Erro ao salvar: {e}")
