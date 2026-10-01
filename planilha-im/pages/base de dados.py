@@ -7,6 +7,9 @@ st.set_page_config(page_title="Base de Dados", layout="wide")
 SUPABASE_URL = st.secrets["SUPABASE_URL"]
 SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 
+with col_voltar:
+  if st.button("← Ir ao Início", use_container_width=True):
+    st.switch_page("menu.py")
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 st.title("📋 Base de Dados Geral")
