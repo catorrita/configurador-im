@@ -71,13 +71,6 @@ if not st.session_state["autenticado"]:
 st.sidebar.title("Menu do Sistema")
 st.sidebar.write(f"Logado como: **{st.session_state['usuario_email']}**")
 
-# ACESSO RÁPIDO AO MENU
-st.sidebar.markdown("---")
-if st.sidebar.button("🚀 Ir para o Menu", use_container_width=True, type="primary"):
-    # Se você tiver uma página separada de menu, use st.switch_page("pages/menu.py")
-    # Caso queira apenas recarregar/focar na tela principal, o rerun já garante:
-    st.rerun()
-
 if st.sidebar.button("🚪 Sair / Logout"):
     st.session_state["autenticado"] = False
     st.session_state["usuario_email"] = ""
