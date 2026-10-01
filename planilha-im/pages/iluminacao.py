@@ -13,7 +13,9 @@ st.set_page_config(page_title="Iluminação de Emergência", layout="wide")
 # ==========================================
 SUPABASE_URL = st.secrets.get("SUPABASE_URL", "")
 SUPABASE_KEY = st.secrets.get("SUPABASE_KEY", "")
-NOME_TABELA = "ILUMINAR_EMERGENCIA"
+NOME_TABELA = (
+    "ILUMINACAO_EMERGENCIA"  # Nome exato indicado pelo erro do Supabase
+)
 
 
 @st.cache_resource
