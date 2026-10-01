@@ -59,7 +59,13 @@ if not st.session_state["autenticado"]:
                                 st.session_state["autenticado"] = True
                                 st.session_state["usuario_email"] = email_limpo
                                 st.success("Login realizado com sucesso!")
-                                st.rerun()
+                                
+                                # Redireciona direto para a página de menu
+                                # (Se o seu arquivo de menu estiver na pasta pages/menu.py, use a linha abaixo)
+                                try:
+                                    st.switch_page("pages/menu.py")
+                                except:
+                                    st.rerun()
                             else:
                                 st.error("Senha incorreta.")
                     except Exception as e:
