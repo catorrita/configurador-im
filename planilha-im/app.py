@@ -1,20 +1,13 @@
 import streamlit as st
-import pandas as pd
-from supabase import create_client
 
 st.set_page_config(page_title="Configurador Instalações Mecânicas Fockink", layout="wide")
-
-# Conexão com o Supabase
-SUPABASE_URL = st.secrets["SUPABASE_URL"]
-SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # Inicializa o estado de login
 if "autenticado" not in st.session_state:
     st.session_state["autenticado"] = False
     st.session_state["usuario_email"] = ""
 
-# --- BLOQUEIO DE SEGURANÇA E OCULTAÇÃO DO MENU SE NÃO LOGADO ---
+# --- TELA DE LOGIN ---
 if not st.session_state["autenticado"]:
     st.markdown("""
         <style>
@@ -42,6 +35,9 @@ if not st.session_state["autenticado"]:
                     st.warning("Por favor, preencha o e-mail e a senha.")
                 else:
                     try:
+                        from supabase import create_client
+                        supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
+                        
                         email_limpo = email_input.strip().lower()
                         response = supabase.table("LOGIN").select("*").execute()
                         todos_usuarios = response.data
@@ -59,13 +55,7 @@ if not st.session_state["autenticado"]:
                                 st.session_state["autenticado"] = True
                                 st.session_state["usuario_email"] = email_limpo
                                 st.success("Login realizado com sucesso!")
-                                
-                                # Redireciona direto para a página de menu
-                                # (Se o seu arquivo de menu estiver na pasta pages/menu.py, use a linha abaixo)
-                                try:
-                                    st.switch_page("pages/menu.py")
-                                except:
-                                    st.rerun()
+                                st.rerun()
                             else:
                                 st.error("Senha incorreta.")
                     except Exception as e:
@@ -73,7 +63,7 @@ if not st.session_state["autenticado"]:
                         
     st.stop()
 
-# --- ÁREA RESTRITA (SÓ APARECE APÓS O LOGIN) ---
+# --- TELA DE MENU PRINCIPAL (Onde o usuário cai ao logar) ---
 st.sidebar.title("Menu do Sistema")
 st.sidebar.write(f"Logado como: **{st.session_state['usuario_email']}**")
 
@@ -84,28 +74,13 @@ if st.sidebar.button("🚪 Sair / Logout"):
     
 st.sidebar.markdown("---")
 
-st.title("📋 Base de Dados Geral")
+# Conteúdo da Página Inicial / Menu
+st.title("🏠 Bem-vindo ao Configurador Fockink")
+st.write("Utilize o menu lateral para navegar entre as opções disponíveis (Base de Dados, Lista de Material, etc.).")
 
-try:
-    response = supabase.table("Base de Dados").select("*").execute()
-    dados = response.data
-    
-    if dados and len(dados) > 0:
-        df = pd.DataFrame(dados)
-        
-        colunas_desejadas = ["COD_SAI", "COD_SGE", "COD_SAP", "DESC_ITEM", "MODIF_POR"]
-        colunas_existentes = [c for c in colunas_desejadas if c in df.columns]
-        df = df.loc[:, colunas_existentes]
-        
-        df_editado = st.data_editor(df, use_container_width=True, height=500, key="editor_simples")
-        
-        if st.button("💾 Salvar Alterações", type="primary"):
-            registros = df_editado.to_dict(orient="records")
-            supabase.table("Base de Dados").upsert(registros, on_conflict="COD_SGE").execute()
-            st.success("Alterações salvas com sucesso!")
-            st.rerun()
-    else:
-        st.warning("A tabela está vazia.")
-
-except Exception as e:
-    st.error(f"Erro ao carregar dados: {e}")
+# Se você quiser colocar atalhos visuais em botões na tela principal:
+col1, col2 = st.columns(2)
+with col1:
+    st.info("📊 **Base de Dados**\n\nGerencie os códigos, SAPs e descrições dos itens.")
+with col2:
+    st.info("📦 **Lista de Material**\n\nConsulte e monte os materiais necessários.")
