@@ -15,11 +15,17 @@ SUPABASE_URL = st.secrets.get("SUPABASE_URL", "")
 SUPABASE_KEY = st.secrets.get("SUPABASE_KEY", "")
 NOME_TABELA = "ILUMINACAO_EMERGENCIA"
 
+# Colunas padrão caso a tabela esteja vazia ou sem registros
+COLUNAS_PADRAO = ["A", "B", "C", "D", "E"]
+
 
 @st.cache_resource
 def init_supabase():
     if SUPABASE_URL and SUPABASE_KEY:
-        return create_client(SUPABASE_URL, SUPABASE_KEY)
+        try:
+            return create_client(SUPABASE_URL, SUPABASE_KEY)
+        except Exception as e:
+            st.error(f"Erro ao inicializar cliente Supabase: {e}")
     return None
 
 
@@ -30,34 +36,42 @@ supabase = init_supabase()
 @st.cache_data(ttl=1)
 def carregar_dados_supabase():
     if not supabase:
-        st.error("❌ Credenciais do Supabase não configuradas nos st.secrets!")
-        return {}, []
+        st.warning(
+            "⚠️ Credenciais do Supabase não configuradas. Usando modo local temporário."
+        )
+        return {}, COLUNAS_PADRAO
 
     try:
         response = supabase.table(NOME_TABELA).select("*").execute()
         registros = response.data
 
         if not registros:
-            return {}, []
+            return {}, COLUNAS_PADRAO
 
+        # Identificar colunas disponíveis (excluindo LINHA e metadados)
         primeiro_registro = registros[0]
         colunas_disponiveis = [
-            c
+            c.upper()
             for c in primeiro_registro.keys()
             if c.upper() != "LINHA" and not c.startswith("_")
         ]
-        colunas_disponiveis = sorted(colunas_disponiveis)
+        
+        if not colunas_disponiveis:
+            colunas_disponiveis = COLUNAS_PADRAO
+        else:
+            colunas_disponiveis = sorted(list(set(colunas_disponiveis)))
 
         mapa_dados = {}
         for reg in registros:
-            val_linha = reg.get("LINHA")
+            val_linha = reg.get("LINHA") or reg.get("linha")
             try:
                 lin_num = int(val_linha)
             except (TypeError, ValueError):
                 continue
 
             for col in colunas_disponiveis:
-                val = reg.get(col, "")
+                # Tenta buscar a chave em maiúsculo ou minúsculo no registro do Supabase
+                val = reg.get(col, reg.get(col.lower(), ""))
                 if val is None or str(val).strip().lower() in ["none", "nan", "null"]:
                     val = ""
                 mapa_dados[f"{col.upper()}{lin_num}"] = str(val)
@@ -65,15 +79,13 @@ def carregar_dados_supabase():
         return mapa_dados, colunas_disponiveis
     except Exception as e:
         st.error(f"Erro ao carregar dados do Supabase: {e}")
-        return {}, []
+        return {}, COLUNAS_PADRAO
 
 
 if "matriz_raw" not in st.session_state or "colunas_excel" not in st.session_state:
     matriz_carregada, cols_carregadas = carregar_dados_supabase()
     st.session_state.matriz_raw = matriz_carregada
-    st.session_state.COLUNAS_EXCEL = (
-        cols_carregadas if cols_carregadas else ["A", "B", "C"]
-    )
+    st.session_state.COLUNAS_EXCEL = cols_carregadas
 
 if "alteracoes_pendentes" not in st.session_state:
     st.session_state.alteracoes_pendentes = False
@@ -97,7 +109,8 @@ def salvar_dados_supabase():
                     lin_int = int(lin)
                     if lin_int not in linhas_dict:
                         linhas_dict[lin_int] = {"LINHA": lin_int}
-                    linhas_dict[lin_int][col] = val if val != "" else None
+                    # Salva a coluna em maiúsculo conforme o padrão da tabela
+                    linhas_dict[lin_int][col.upper()] = val if val != "" else None
 
             for lin_int, dados_linha in linhas_dict.items():
                 supabase.table(NOME_TABELA).upsert(
@@ -120,7 +133,10 @@ col_voltar, col_status, col_salvar, col_exportar = st.columns([2, 3, 2, 2])
 
 with col_voltar:
     if st.button("Voltar ao Menu", use_container_width=True):
-        st.switch_page("pages/menu.py")
+        try:
+            st.switch_page("pages/menu.py")
+        except Exception:
+            st.info("Menu indisponível neste contexto.")
 
 with col_status:
     if st.session_state.alteracoes_pendentes:
@@ -471,7 +487,7 @@ df_editado = st.data_editor(
     df_exibicao, use_container_width=True, height=550, key="grid_supabase"
 )
 
-# Sincronização inteligente das edições na grid (evita sobrescrever fórmulas com o resultado exibido)
+# Sincronização inteligente das edições na grid
 houve_alteracao = False
 for lin_idx, lin in enumerate(range(1, len(df_exibicao) + 1)):
     for col_idx, col in enumerate(COLUNAS_EXCEL):
@@ -485,16 +501,10 @@ for lin_idx, lin in enumerate(range(1, len(df_exibicao) + 1)):
             else str(val_digitado).strip()
         )
         
-        # Valor real salvo na matriz crua do session_state
         val_atual_raw = str(st.session_state.matriz_raw.get(celula_ref, "")).strip()
-        
-        # Valor calculado exibido atualmente na tabela
         val_calculado_exibido = str(df_exibicao.iat[lin_idx, col_idx]).strip()
 
-        # Só atualiza se o usuário digitou algo diferente E se o campo original NÃO for uma fórmula, 
-        # ou se o usuário explicitamente alterou o texto da célula editável da grid.
         if val_final != val_calculado_exibido:
-            # Se o valor atual cru for uma fórmula e o usuário digitou o próprio resultado calculado, não sobrescreve a fórmula.
             if val_atual_raw.startswith("=") and val_final == val_calculado_exibido:
                 continue
             st.session_state.matriz_raw[celula_ref] = val_final
